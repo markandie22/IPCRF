@@ -303,10 +303,64 @@ button:hover,
     border-radius: 12px;
     background: #fbfdff;
     padding: 16px;
+    margin-bottom: 16px;
 }
 
 .review-box p {
     margin: 8px 0;
+}
+
+.review-box__title {
+    margin: 0 0 10px;
+    color: var(--depblue);
+    font-size: 1.05rem;
+}
+
+.review-warning {
+    color: #b21b34;
+    font-weight: 700;
+    display: none;
+}
+
+.final-review-card {
+    max-width: 720px;
+}
+
+.wizard-tab--final {
+    background: #ffcc00;
+    color: #1f305f;
+    border-color: #d9a900;
+}
+
+.wizard-tab--final.active {
+    background: linear-gradient(135deg, #d9a900 0%, #ffcc00 100%);
+    color: #1f305f;
+}
+
+.required-mark {
+    color: #c8102e;
+    font-weight: 800;
+}
+
+.demo-fieldset {
+    border: 2px solid #2f3e63;
+    border-radius: 4px;
+    padding: 16px;
+    margin: 0 0 16px;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.demo-fieldset legend {
+    padding: 0 8px;
+    font-weight: 800;
+    color: #000;
+    font-size: 1.05rem;
+}
+
+.demo-section-title {
+    margin: 0 0 10px;
+    color: #000;
+    font-size: 1.15rem;
 }
 
 .demographic-board {
@@ -325,6 +379,12 @@ button:hover,
     grid-template-columns: 260px 1fr;
     gap: 10px 14px;
     align-items: center;
+}
+
+.demo-grid input[readonly] {
+    background: #eef3ff;
+    color: #41557f;
+    cursor: not-allowed;
 }
 
 .demo-grid label {
@@ -617,6 +677,12 @@ button:hover,
     border-radius: 0;
     background: #fff;
     padding: 8px 10px;
+}
+
+.sign-card input[readonly] {
+    background: #eef3ff;
+    font-weight: 700;
+    cursor: not-allowed;
 }
 
 /* Part I-IV additions */

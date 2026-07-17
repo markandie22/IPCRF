@@ -1,9 +1,17 @@
 <?php
 include("db.php");
+include("school_helper.php");
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'teacher') {
     die("Access denied.");
 }
+
+$bataanSchools = get_bataan_public_schools();
+$currentUser = null;
+$userStmt = $conn->prepare("SELECT name, school_name FROM users WHERE id = ?");
+$userStmt->bind_param("i", $_SESSION['user_id']);
+$userStmt->execute();
+$currentUser = $userStmt->get_result()->fetch_assoc();
 
 $message = "";
 $jumpToLastStep = false;
@@ -254,11 +262,11 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
         <button type="button" class="wizard-tab active" data-step="1">Step 1</button>
         <button type="button" class="wizard-tab" data-step="2">Step 2</button>
         <button type="button" class="wizard-tab" data-step="3">Step 3</button>
-        <button type="button" class="wizard-tab" data-step="4">Step 4</button>
-        <button type="button" class="wizard-tab" data-step="5">Part I</button>
-        <button type="button" class="wizard-tab" data-step="6">Part II</button>
-        <button type="button" class="wizard-tab" data-step="7">Part III</button>
-        <button type="button" class="wizard-tab" data-step="8">Part IV</button>
+        <button type="button" class="wizard-tab" data-step="4">Part I</button>
+        <button type="button" class="wizard-tab" data-step="5">Part II</button>
+        <button type="button" class="wizard-tab" data-step="6">Part III</button>
+        <button type="button" class="wizard-tab" data-step="7">Part IV</button>
+        <button type="button" class="wizard-tab wizard-tab--final" data-step="8">Review &amp; Submit</button>
     </div>
 
     <form method="POST" id="ipcrfWizardForm">
@@ -327,69 +335,161 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
         <section class="wizard-step" data-step="3">
             <div class="intro-board demographic-board">
                 <h2>Step 3: Demographic Profile</h2>
+                <p class="step-hint step-hint--dark">Fields marked <span class="required-mark">*</span> are required. School Name defaults to the school on your account.</p>
 
-                <div class="demo-grid demo-grid-3">
-                    <label for="region">Region</label>
-                    <input type="text" id="region" name="region">
+                <fieldset class="demo-fieldset">
+                    <legend>Personal Information</legend>
+                    <div class="demo-grid demo-grid-3">
+                        <label for="last_name">Last Name <span class="required-mark">*</span></label>
+                        <input type="text" id="last_name" name="last_name" required>
 
-                    <label for="division">Division</label>
-                    <input type="text" id="division" name="division">
+                        <label for="first_name">First Name <span class="required-mark">*</span></label>
+                        <input type="text" id="first_name" name="first_name" required>
 
-                    <label for="school_id">School ID</label>
-                    <input type="text" id="school_id" name="school_id">
+                        <label for="middle_name">Middle Name</label>
+                        <input type="text" id="middle_name" name="middle_name">
 
-                    <label for="school_name">CLC / School Name</label>
-                    <input type="text" id="school_name" name="school_name">
+                        <label for="sex">Sex <span class="required-mark">*</span></label>
+                        <select id="sex" name="sex" required>
+                            <option value="">-- Select --</option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                        </select>
 
-                    <label for="school_type">School Type</label>
-                    <input type="text" id="school_type" name="school_type">
+                        <label for="age">Age</label>
+                        <input type="number" id="age" name="age" min="18" max="70" placeholder="e.g., 30">
 
-                    <label for="school_size">School Size</label>
-                    <input type="text" id="school_size" name="school_size">
+                        <label for="employee_id">Employee ID</label>
+                        <input type="text" id="employee_id" name="employee_id">
 
-                    <label for="curricular_classification">Curricular Classification</label>
-                    <input type="text" id="curricular_classification" name="curricular_classification">
+                        <label for="deped_email">DepEd Email Address</label>
+                        <input type="email" id="deped_email" name="deped_email" placeholder="name@deped.gov.ph">
 
-                    <label for="last_name">Last Name</label>
-                    <input type="text" id="last_name" name="last_name">
+                        <label for="tin">TIN</label>
+                        <input type="text" id="tin" name="tin" maxlength="20" placeholder="e.g., 123-456-789-000">
+                    </div>
+                </fieldset>
 
-                    <label for="first_name">First Name</label>
-                    <input type="text" id="first_name" name="first_name">
+                <fieldset class="demo-fieldset">
+                    <legend>School Information</legend>
+                    <div class="demo-grid demo-grid-3">
+                        <label for="region">Region</label>
+                        <input type="text" id="region" name="region" value="Region III (Central Luzon)" readonly>
 
-                    <label for="middle_name">Middle Name</label>
-                    <input type="text" id="middle_name" name="middle_name">
+                        <label for="division">Division</label>
+                        <input type="text" id="division" name="division" value="Schools Division of Bataan" readonly>
 
-                    <label for="employee_id">Employee ID</label>
-                    <input type="text" id="employee_id" name="employee_id">
+                        <label for="school_name">CLC / School Name <span class="required-mark">*</span></label>
+                        <select id="school_name" name="school_name" required>
+                            <option value="">-- Select School --</option>
+                            <?php foreach ($bataanSchools as $schoolOption): ?>
+                                <option value="<?php echo htmlspecialchars($schoolOption); ?>" <?php echo (($currentUser['school_name'] ?? '') === $schoolOption) ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($schoolOption); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
 
-                    <label for="position">Position</label>
-                    <input type="text" id="position" name="position">
+                        <label for="school_id">School ID</label>
+                        <input type="text" id="school_id" name="school_id" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="e.g., 300001">
 
-                    <label for="employment_status">Employment Status</label>
-                    <input type="text" id="employment_status" name="employment_status">
+                        <label for="school_type">School Type</label>
+                        <select id="school_type" name="school_type">
+                            <option value="">-- Select --</option>
+                            <option value="Elementary">Elementary</option>
+                            <option value="Junior High School">Junior High School</option>
+                            <option value="Senior High School">Senior High School</option>
+                            <option value="Integrated School (Elementary & JHS)">Integrated School (Elementary &amp; JHS)</option>
+                            <option value="Integrated School (JHS & SHS)">Integrated School (JHS &amp; SHS)</option>
+                            <option value="Integrated School (Elementary, JHS & SHS)">Integrated School (Elementary, JHS &amp; SHS)</option>
+                        </select>
 
-                    <label for="age">Age</label>
-                    <input type="text" id="age" name="age">
+                        <label for="school_size">School Size</label>
+                        <select id="school_size" name="school_size">
+                            <option value="">-- Select --</option>
+                            <option value="Small (1-149 learners)">Small (1-149 learners)</option>
+                            <option value="Medium (150-499 learners)">Medium (150-499 learners)</option>
+                            <option value="Large (500-1499 learners)">Large (500-1499 learners)</option>
+                            <option value="Very Large (1500+ learners)">Very Large (1500+ learners)</option>
+                        </select>
 
-                    <label for="sex">Sex</label>
-                    <input type="text" id="sex" name="sex">
+                        <label for="curricular_classification">Curricular Classification</label>
+                        <select id="curricular_classification" name="curricular_classification">
+                            <option value="">-- Select --</option>
+                            <option value="Purely Elementary">Purely Elementary</option>
+                            <option value="Purely Junior High School">Purely Junior High School</option>
+                            <option value="Purely Senior High School">Purely Senior High School</option>
+                            <option value="Elementary with SHS">Elementary with SHS</option>
+                            <option value="Junior HS with SHS">Junior HS with SHS</option>
+                            <option value="Elementary, JHS and SHS">Elementary, JHS and SHS</option>
+                            <option value="With Special Education (SPED) Program">With Special Education (SPED) Program</option>
+                            <option value="With Alternative Learning System (ALS) Program">With Alternative Learning System (ALS) Program</option>
+                        </select>
+                    </div>
+                </fieldset>
 
-                    <label for="years_teaching">Number of Years in Teaching</label>
-                    <input type="text" id="years_teaching" name="years_teaching">
+                <fieldset class="demo-fieldset">
+                    <legend>Professional Information</legend>
+                    <div class="demo-grid demo-grid-3">
+                        <label for="position">Position <span class="required-mark">*</span></label>
+                        <select id="position" name="position" required>
+                            <option value="">-- Select --</option>
+                            <option value="Teacher I">Teacher I</option>
+                            <option value="Teacher II">Teacher II</option>
+                            <option value="Teacher III">Teacher III</option>
+                            <option value="Master Teacher I">Master Teacher I</option>
+                            <option value="Master Teacher II">Master Teacher II</option>
+                            <option value="Master Teacher III">Master Teacher III</option>
+                            <option value="Master Teacher IV">Master Teacher IV</option>
+                            <option value="Head Teacher I">Head Teacher I</option>
+                            <option value="Head Teacher II">Head Teacher II</option>
+                            <option value="Head Teacher III">Head Teacher III</option>
+                            <option value="Head Teacher IV">Head Teacher IV</option>
+                            <option value="Head Teacher V">Head Teacher V</option>
+                            <option value="Head Teacher VI">Head Teacher VI</option>
+                            <option value="School Principal I">School Principal I</option>
+                            <option value="School Principal II">School Principal II</option>
+                            <option value="School Principal III">School Principal III</option>
+                            <option value="School Principal IV">School Principal IV</option>
+                        </select>
 
-                    <label for="highest_degree">Highest Degree Obtained</label>
-                    <input type="text" id="highest_degree" name="highest_degree">
+                        <label for="employment_status">Employment Status <span class="required-mark">*</span></label>
+                        <select id="employment_status" name="employment_status" required>
+                            <option value="">-- Select --</option>
+                            <option value="Permanent">Permanent</option>
+                            <option value="Temporary">Temporary</option>
+                            <option value="Provisional">Provisional</option>
+                            <option value="Contractual">Contractual</option>
+                            <option value="Substitute">Substitute</option>
+                            <option value="Co-Terminus">Co-Terminus</option>
+                        </select>
 
-                    <label for="level_taught">Level Taught</label>
-                    <input type="text" id="level_taught" name="level_taught">
+                        <label for="years_teaching">Number of Years in Teaching</label>
+                        <input type="number" id="years_teaching" name="years_teaching" min="0" max="50" placeholder="e.g., 5">
 
-                    <label for="deped_email">DepEd Email Address</label>
-                    <input type="email" id="deped_email" name="deped_email">
+                        <label for="highest_degree">Highest Degree Obtained</label>
+                        <select id="highest_degree" name="highest_degree">
+                            <option value="">-- Select --</option>
+                            <option value="Bachelor's Degree">Bachelor's Degree</option>
+                            <option value="Bachelor's Degree with Master's Units">Bachelor's Degree with Master's Units</option>
+                            <option value="Master's Degree Graduate">Master's Degree Graduate</option>
+                            <option value="Master's Degree with Doctorate Units">Master's Degree with Doctorate Units</option>
+                            <option value="Doctorate Degree Graduate">Doctorate Degree Graduate</option>
+                        </select>
 
-                    <label for="tin">TIN</label>
-                    <input type="text" id="tin" name="tin">
-                </div>
+                        <label for="level_taught">Level Taught</label>
+                        <select id="level_taught" name="level_taught">
+                            <option value="">-- Select --</option>
+                            <option value="Kindergarten">Kindergarten</option>
+                            <option value="Elementary (Grades 1-6)">Elementary (Grades 1-6)</option>
+                            <option value="Junior High School (Grades 7-10)">Junior High School (Grades 7-10)</option>
+                            <option value="Senior High School (Grades 11-12)">Senior High School (Grades 11-12)</option>
+                            <option value="SPED">SPED</option>
+                            <option value="ALS">ALS</option>
+                        </select>
+                    </div>
+                </fieldset>
 
+                <h3 class="demo-section-title">Teaching Assignment</h3>
                 <div class="checkbox-panels">
                     <div class="checkbox-panel">
                         <h3>AREA(S) OF SPECIALIZATION</h3>
@@ -451,44 +551,14 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
         </section>
 
         <section class="wizard-step" data-step="4">
-            <div class="login-card form-card">
-                <h2>Step 4: Review & Submit</h2>
-                <p>Review your details, then submit your IPCRF entry.</p>
-
-                <div class="review-box">
-                    <p><strong>School Year:</strong> <span id="review_school_year"></span></p>
-                    <p><strong>Career Stage:</strong> <span id="review_career_stage"></span></p>
-                    <p><strong>Objective:</strong> <span id="review_objective"></span></p>
-                    <p><strong>Performance Indicator:</strong> <span id="review_performance_indicator"></span></p>
-                    <p><strong>Rating:</strong> <span id="review_rating"></span></p>
-                    <p><strong>Remarks:</strong> <span id="review_remarks"></span></p>
-                    <p><strong>Teacher Name:</strong> <span id="review_teacher_name"></span></p>
-                    <p><strong>Region / Division:</strong> <span id="review_region_division"></span></p>
-                    <p><strong>School:</strong> <span id="review_school_name"></span></p>
-                    <p><strong>Position:</strong> <span id="review_position"></span></p>
-                    <p><strong>Years in Teaching:</strong> <span id="review_years_teaching"></span></p>
-                </div>
-
-                <p class="step-hint">Continue to <strong>Part I</strong> to fill out the complete IPCRF Rating Sheet (all 14 objectives), then Parts II-IV.</p>
-
-                <div class="wizard-actions split">
-                    <button type="button" class="btn-back" data-back="3">Back</button>
-                    <button type="button" class="btn-next" data-next="5">Next: Part I</button>
-                </div>
-
-                <?php echo $message; ?>
-            </div>
-        </section>
-
-        <section class="wizard-step" data-step="5">
             <div class="step5-wrap">
                 <h2>PART I: Official IPCRF Rating Sheet</h2>
-                <p class="step-hint step-hint--dark">Reference rubric text is fixed per DepEd's official form. Fill in <strong>Actual Results</strong> and select a <strong>Rating</strong> for every Quality/Efficiency criterion — Ave and Score are computed automatically.</p>
+                <p class="step-hint step-hint--dark">Reference rubric text is fixed per DepEd's official form. Fill in <strong>Actual Results</strong> and select a <strong>Rating</strong> for every Quality/Efficiency criterion — Ave and Score are computed automatically. <strong>Name of Employee</strong>, <strong>Position</strong>, and <strong>Bureau/Center/Service/Division</strong> below are filled in automatically from your Step 3 Demographic Profile.</p>
 
                 <table class="step5-table ipcrf-header-table">
                     <tr>
                         <th colspan="3">Name of Employee:</th>
-                        <td colspan="4"><input type="text" name="s5_employee_name"></td>
+                        <td colspan="4"><input type="text" id="s5_employee_name" name="s5_employee_name" readonly></td>
                         <th>RATER Last Name:</th>
                         <td><input type="text" name="s5_rater_last"></td>
                         <th>First:</th>
@@ -498,7 +568,7 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                     </tr>
                     <tr>
                         <th colspan="3">Position:</th>
-                        <td colspan="4"><input type="text" name="s5_employee_position"></td>
+                        <td colspan="4"><input type="text" id="s5_employee_position" name="s5_employee_position" readonly></td>
                         <th>Position:</th>
                         <td><input type="text" name="s5_rater_position"></td>
                         <th>Email:</th>
@@ -506,7 +576,7 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                     </tr>
                     <tr>
                         <th colspan="3">Bureau/Center/Service/Division:</th>
-                        <td colspan="4"><input type="text" name="s5_bureau"></td>
+                        <td colspan="4"><input type="text" id="s5_bureau" name="s5_bureau" readonly></td>
                         <th>Date of Review:</th>
                         <td><input type="text" name="s5_date_review" placeholder="YYYY-MM-DD"></td>
                         <td colspan="4"></td>
@@ -596,13 +666,13 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                 </div>
 
                 <div class="wizard-actions split">
-                    <button type="button" class="btn-back" data-back="4">Back</button>
-                    <button type="button" class="btn-next" data-next="6">Next: Part II</button>
+                    <button type="button" class="btn-back" data-back="3">Back</button>
+                    <button type="button" class="btn-next" data-next="5">Next: Part II</button>
                 </div>
             </div>
         </section>
 
-        <section class="wizard-step" data-step="6">
+        <section class="wizard-step" data-step="5">
             <div class="step5-wrap">
                 <h2>PART II: Core Behavioral Competencies</h2>
                 <p class="step-hint step-hint--dark">Check every indicator you demonstrated during the performance cycle. The count per competency is totaled automatically (this does not affect the numerical rating in Part I).</p>
@@ -627,13 +697,13 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                 </div>
 
                 <div class="wizard-actions split">
-                    <button type="button" class="btn-back" data-back="5">Back</button>
-                    <button type="button" class="btn-next" data-next="7">Next: Part III</button>
+                    <button type="button" class="btn-back" data-back="4">Back</button>
+                    <button type="button" class="btn-next" data-next="6">Next: Part III</button>
                 </div>
             </div>
         </section>
 
-        <section class="wizard-step" data-step="7">
+        <section class="wizard-step" data-step="6">
             <div class="step5-wrap">
                 <h2>PART III: Summary of Ratings for Discussion</h2>
                 <p class="step-hint step-hint--dark">Auto-generated from Part I. Go back and complete every objective's rating in Part I to fill this in.</p>
@@ -677,7 +747,7 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                 <div class="step5-signatory-grid">
                     <div class="sign-card">
                         <label>Ratee:</label>
-                        <input type="text" name="s7_sign_ratee_name">
+                        <input type="text" id="s7_sign_ratee_name" name="s7_sign_ratee_name" readonly>
                     </div>
                     <div class="sign-card">
                         <label>Rater:</label>
@@ -690,13 +760,13 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                 </div>
 
                 <div class="wizard-actions split">
-                    <button type="button" class="btn-back" data-back="6">Back</button>
-                    <button type="button" class="btn-next" data-next="8">Next: Part IV</button>
+                    <button type="button" class="btn-back" data-back="5">Back</button>
+                    <button type="button" class="btn-next" data-next="7">Next: Part IV</button>
                 </div>
             </div>
         </section>
 
-        <section class="wizard-step" data-step="8">
+        <section class="wizard-step" data-step="7">
             <div class="step5-wrap">
                 <h2>PART IV: Development Plans</h2>
                 <p class="step-hint step-hint--dark">A. Functional Competencies &mdash; list your strengths and development needs per objective, with the action plan, timeline, and resources needed. Use "Add Row" for more entries.</p>
@@ -756,7 +826,7 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                 <div class="step5-signatory-grid">
                     <div class="sign-card">
                         <label>Ratee:</label>
-                        <input type="text" name="s8_sign_ratee_name">
+                        <input type="text" id="s8_sign_ratee_name" name="s8_sign_ratee_name" readonly>
                     </div>
                     <div class="sign-card">
                         <label>Rater:</label>
@@ -766,6 +836,62 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                         <label>Approving Authority:</label>
                         <input type="text" name="s8_sign_approver_name">
                     </div>
+                </div>
+
+                <div class="wizard-actions split">
+                    <button type="button" class="btn-back" data-back="6">Back</button>
+                    <button type="button" class="btn-next" data-next="8">Next: Review &amp; Submit</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="wizard-step" data-step="8">
+            <div class="login-card form-card final-review-card">
+                <h2>Final Review &amp; Submit</h2>
+                <p>Check every part below, then submit your complete IPCRF.</p>
+
+                <div class="review-box">
+                    <h3 class="review-box__title">Quick Entry</h3>
+                    <p><strong>School Year:</strong> <span id="review_school_year"></span></p>
+                    <p><strong>Career Stage:</strong> <span id="review_career_stage"></span></p>
+                    <p><strong>Objective:</strong> <span id="review_objective"></span></p>
+                    <p><strong>Performance Indicator:</strong> <span id="review_performance_indicator"></span></p>
+                    <p><strong>Rating:</strong> <span id="review_rating"></span></p>
+                    <p><strong>Remarks:</strong> <span id="review_remarks"></span></p>
+                </div>
+
+                <div class="review-box">
+                    <h3 class="review-box__title">Demographic Profile</h3>
+                    <p><strong>Teacher Name:</strong> <span id="review_teacher_name"></span></p>
+                    <p><strong>Region / Division:</strong> <span id="review_region_division"></span></p>
+                    <p><strong>School:</strong> <span id="review_school_name"></span></p>
+                    <p><strong>Position:</strong> <span id="review_position"></span></p>
+                    <p><strong>Employment Status:</strong> <span id="review_employment_status"></span></p>
+                    <p><strong>Years in Teaching:</strong> <span id="review_years_teaching"></span></p>
+                    <p><strong>Level Taught:</strong> <span id="review_level_taught"></span></p>
+                    <p><strong>Highest Degree Obtained:</strong> <span id="review_highest_degree"></span></p>
+                </div>
+
+                <div class="review-box">
+                    <h3 class="review-box__title">Part I &mdash; Rating Sheet</h3>
+                    <p><strong>Final Rating:</strong> <span id="review_final_rating">&mdash;</span></p>
+                    <p><strong>Adjectival Rating:</strong> <span id="review_final_adjectival">&mdash;</span></p>
+                    <p id="review_part1_incomplete" class="review-warning">Not all 14 objectives are rated yet &mdash; go back to Part I to finish.</p>
+                </div>
+
+                <div class="review-box">
+                    <h3 class="review-box__title">Part II &mdash; Core Behavioral Competencies</h3>
+                    <p><strong>Self-Management:</strong> <span id="review_comp_self_management">0</span>/5</p>
+                    <p><strong>Teamwork:</strong> <span id="review_comp_teamwork">0</span>/5</p>
+                    <p><strong>Professionalism and Ethics:</strong> <span id="review_comp_prof_ethics">0</span>/5</p>
+                    <p><strong>Service Orientation:</strong> <span id="review_comp_service_orientation">0</span>/5</p>
+                    <p><strong>Results Focus:</strong> <span id="review_comp_results_focus">0</span>/5</p>
+                    <p><strong>Innovation:</strong> <span id="review_comp_innovation">0</span>/5</p>
+                </div>
+
+                <div class="review-box">
+                    <h3 class="review-box__title">Part IV &mdash; Development Plans</h3>
+                    <p><strong>Rows filled out:</strong> <span id="review_devplan_count">0</span></p>
                 </div>
 
                 <div class="wizard-actions split">
@@ -789,35 +915,60 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
     const steps = document.querySelectorAll('.wizard-step');
     const nextButtons = document.querySelectorAll('.btn-next');
     const backButtons = document.querySelectorAll('.btn-back');
+    const COMPETENCY_KEYS = ['self_management', 'teamwork', 'prof_ethics', 'service_orientation', 'results_focus', 'innovation'];
 
     function showStep(stepNumber) {
         tabs.forEach(tab => tab.classList.toggle('active', tab.dataset.step === String(stepNumber)));
         steps.forEach(step => step.classList.toggle('active', step.dataset.step === String(stepNumber)));
 
-        if (String(stepNumber) === '4') {
-            document.getElementById('review_school_year').textContent = document.getElementById('school_year').value || '-';
-            document.getElementById('review_career_stage').textContent = document.getElementById('career_stage').value || '-';
-            document.getElementById('review_objective').textContent = document.getElementById('objective').value || '-';
-            document.getElementById('review_performance_indicator').textContent = document.getElementById('performance_indicator').value || '-';
-            document.getElementById('review_rating').textContent = document.getElementById('rating').value || '-';
-            document.getElementById('review_remarks').textContent = document.getElementById('remarks').value || '-';
-
-            const firstName = document.getElementById('first_name').value || '';
-            const middleName = document.getElementById('middle_name').value || '';
-            const lastName = document.getElementById('last_name').value || '';
-            const region = document.getElementById('region').value || '-';
-            const division = document.getElementById('division').value || '-';
-
-            document.getElementById('review_teacher_name').textContent = `${firstName} ${middleName} ${lastName}`.trim() || '-';
-            document.getElementById('review_region_division').textContent = `${region} / ${division}`;
-            document.getElementById('review_school_name').textContent = document.getElementById('school_name').value || '-';
-            document.getElementById('review_position').textContent = document.getElementById('position').value || '-';
-            document.getElementById('review_years_teaching').textContent = document.getElementById('years_teaching').value || '-';
-        }
-
-        if (String(stepNumber) === '7') {
+        if (String(stepNumber) === '6') {
             updateStep7Summary();
         }
+
+        if (String(stepNumber) === '8') {
+            updateFinalReviewStep();
+        }
+    }
+
+    function updateFinalReviewStep() {
+        document.getElementById('review_school_year').textContent = document.getElementById('school_year').value || '-';
+        document.getElementById('review_career_stage').textContent = document.getElementById('career_stage').value || '-';
+        document.getElementById('review_objective').textContent = document.getElementById('objective').value || '-';
+        document.getElementById('review_performance_indicator').textContent = document.getElementById('performance_indicator').value || '-';
+        document.getElementById('review_rating').textContent = document.getElementById('rating').value || '-';
+        document.getElementById('review_remarks').textContent = document.getElementById('remarks').value || '-';
+
+        const firstName = document.getElementById('first_name').value || '';
+        const middleName = document.getElementById('middle_name').value || '';
+        const lastName = document.getElementById('last_name').value || '';
+        const region = document.getElementById('region').value || '-';
+        const division = document.getElementById('division').value || '-';
+
+        document.getElementById('review_teacher_name').textContent = `${firstName} ${middleName} ${lastName}`.trim() || '-';
+        document.getElementById('review_region_division').textContent = `${region} / ${division}`;
+        document.getElementById('review_school_name').textContent = document.getElementById('school_name').value || '-';
+        document.getElementById('review_position').textContent = document.getElementById('position').value || '-';
+        document.getElementById('review_employment_status').textContent = document.getElementById('employment_status').value || '-';
+        document.getElementById('review_years_teaching').textContent = document.getElementById('years_teaching').value || '-';
+        document.getElementById('review_level_taught').textContent = document.getElementById('level_taught').value || '-';
+        document.getElementById('review_highest_degree').textContent = document.getElementById('highest_degree').value || '-';
+
+        const finalNumeric = document.getElementById('s5_final_numeric_hidden').value;
+        const finalAdjectival = document.getElementById('s5_final_adjectival_hidden').value;
+        document.getElementById('review_final_rating').textContent = finalNumeric || '—';
+        document.getElementById('review_final_adjectival').textContent = finalAdjectival || '—';
+        document.getElementById('review_part1_incomplete').style.display = finalAdjectival ? 'none' : 'block';
+
+        COMPETENCY_KEYS.forEach(key => {
+            const totalField = document.getElementById(`comp_total_${key}`);
+            const reviewField = document.getElementById(`review_comp_${key}`);
+            if (totalField && reviewField) reviewField.textContent = totalField.value || '0';
+        });
+
+        const devplanInputs = document.querySelectorAll('input[name^="s8_func_strength_"], input[name^="s8_core_strength_"]');
+        let filledRows = 0;
+        devplanInputs.forEach(el => { if (el.value.trim() !== '') filledRows++; });
+        document.getElementById('review_devplan_count').textContent = filledRows;
     }
 
     <?php if ($jumpToLastStep): ?>
@@ -959,6 +1110,37 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
         });
         tbody.appendChild(clone);
     };
+
+    // ---- Mirror the Demographic Profile (who is answering) into every other
+    // place the form asks for the ratee's name / position / school, so the
+    // teacher only types their identity once. ----
+    function syncIdentityFields() {
+        const firstName = document.getElementById('first_name').value || '';
+        const middleName = document.getElementById('middle_name').value || '';
+        const lastName = document.getElementById('last_name').value || '';
+        const fullName = `${firstName} ${middleName} ${lastName}`.replace(/\s+/g, ' ').trim();
+        const position = document.getElementById('position').value || '';
+        const schoolName = document.getElementById('school_name').value || '';
+
+        ['s5_employee_name', 's7_sign_ratee_name', 's8_sign_ratee_name'].forEach(id => {
+            const field = document.getElementById(id);
+            if (field) field.value = fullName;
+        });
+
+        const positionField = document.getElementById('s5_employee_position');
+        if (positionField) positionField.value = position;
+
+        const bureauField = document.getElementById('s5_bureau');
+        if (bureauField) bureauField.value = schoolName;
+    }
+
+    ['last_name', 'first_name', 'middle_name', 'position', 'school_name'].forEach(id => {
+        const field = document.getElementById(id);
+        if (!field) return;
+        field.addEventListener('input', syncIdentityFields);
+        field.addEventListener('change', syncIdentityFields);
+    });
+    syncIdentityFields();
 
     // ---- Guard against duplicate entries from a double click / double Enter ----
     const wizardForm = document.getElementById('ipcrfWizardForm');
