@@ -1,11 +1,13 @@
 -- IPCRF MySQL Setup Script
 -- Fixes "no connection/database selected" issues by creating and selecting the DB first.
+-- WARNING: this script DROPS and recreates ipcrf_entries/users/schools. Only run it for a
+-- fresh install; running it against a live "ipcrf" database wipes existing data.
 
-CREATE DATABASE IF NOT EXISTS ipcrf_db
+CREATE DATABASE IF NOT EXISTS ipcrf
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
-USE ipcrf_db;
+USE ipcrf;
 
 -- Drop in FK-safe order for repeatable imports
 DROP TABLE IF EXISTS ipcrf_entries;
@@ -38,6 +40,7 @@ CREATE TABLE ipcrf_entries (
     performance_indicator TEXT NOT NULL,
     rating INT NOT NULL,
     remarks TEXT,
+    full_data LONGTEXT NULL,
     CONSTRAINT fk_entries_user FOREIGN KEY (user_id) REFERENCES users(id)
         ON UPDATE CASCADE
         ON DELETE CASCADE

@@ -3,7 +3,7 @@ session_start();
 $host = "localhost";
 $user = "root";
 $pass = "";
-$db   = "ipcrf_db";
+$db   = "ipcrf";
 
 $conn = new mysqli($host, $user, $pass, $db);
 if ($conn->connect_error) {
@@ -20,6 +20,20 @@ $createUsersTable = "CREATE TABLE IF NOT EXISTS users (
     school_name VARCHAR(150) NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 $conn->query($createUsersTable);
+
+$createEntriesTable = "CREATE TABLE IF NOT EXISTS ipcrf_entries (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    objective TEXT NOT NULL,
+    performance_indicator TEXT NOT NULL,
+    rating INT NOT NULL,
+    remarks TEXT,
+    full_data LONGTEXT NULL,
+    CONSTRAINT fk_entries_user FOREIGN KEY (user_id) REFERENCES users(id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+$conn->query($createEntriesTable);
 
 /**
  * Lightweight schema migration for existing databases.
@@ -47,4 +61,21 @@ if (!in_array('school_name', $existingUserColumns, true)) {
  * This works even if role column is already VARCHAR(20).
  */
 $conn->query("ALTER TABLE users MODIFY COLUMN role VARCHAR(20) NOT NULL DEFAULT 'teacher'");
+
+/**
+ * Ensure ipcrf_entries can store the full wizard submission (Parts I-IV)
+ * as JSON, in addition to the original structured columns.
+ */
+$entriesColumnResult = $conn->query("SHOW COLUMNS FROM ipcrf_entries");
+$existingEntriesColumns = [];
+
+if ($entriesColumnResult) {
+    while ($column = $entriesColumnResult->fetch_assoc()) {
+        $existingEntriesColumns[] = $column['Field'];
+    }
+}
+
+if (!empty($existingEntriesColumns) && !in_array('full_data', $existingEntriesColumns, true)) {
+    $conn->query("ALTER TABLE ipcrf_entries ADD COLUMN full_data LONGTEXT NULL");
+}
 ?>
