@@ -115,7 +115,8 @@ button:hover,
     background: #002f80;
 }
 
-.login-card .message {
+.login-card .message,
+.admin-card .message {
     margin-top: 18px;
     padding: 12px 14px;
     border-radius: 10px;
@@ -124,9 +125,16 @@ button:hover,
     font-size: 0.95rem;
 }
 
-.login-card .message--success {
+.login-card .message--success,
+.admin-card .message--success {
     background: #e9f9ef;
     color: #177a3f;
+}
+
+.admin-card .message--info {
+    background: #eef3ff;
+    color: var(--depblue);
+    margin: 6px 0 14px;
 }
 
 .footer-note {
@@ -521,6 +529,16 @@ button:hover,
     margin: 6px 0 14px;
 }
 
+.admin-form {
+    max-width: 480px;
+    margin: 6px 0 24px;
+}
+
+.admin-form .btn {
+    width: auto;
+    min-width: 180px;
+}
+
 .admin-reset label {
     font-weight: 700;
     color: #334165;
@@ -589,6 +607,189 @@ button:hover,
     text-align: center;
     color: #65759f;
     padding: 20px !important;
+}
+
+/* Principal dashboard */
+.stat-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin: 6px 0 22px;
+}
+
+.stat-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 18px 10px;
+    border-radius: 12px;
+    background: #eef3ff;
+    border: 1px solid #d7e1f4;
+}
+
+.stat-tile__value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--depblue);
+}
+
+.stat-tile__label {
+    font-size: 0.85rem;
+    color: #4a5679;
+    font-weight: 600;
+}
+
+.stat-tile--good {
+    background: #e9f9ef;
+    border-color: #bfe9cf;
+}
+
+.stat-tile--good .stat-tile__value {
+    color: #177a3f;
+}
+
+.stat-tile--bad {
+    background: #fff0f1;
+    border-color: #f3c2c9;
+}
+
+.stat-tile--bad .stat-tile__value {
+    color: #b21b34;
+}
+
+.stat-tile--muted .stat-tile__value {
+    color: #65759f;
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.badge--good {
+    background: #e9f9ef;
+    color: #177a3f;
+}
+
+.badge--bad {
+    background: #fff0f1;
+    color: #b21b34;
+}
+
+.badge--muted {
+    background: #edf1fa;
+    color: #65759f;
+}
+
+.charts-row {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+.chart-panel {
+    background: #fff;
+    border: 1px solid #d7e1f4;
+    border-radius: 12px;
+    padding: 16px;
+}
+
+.chart-panel h3 {
+    margin: 0 0 16px;
+    color: #1f305f;
+    font-size: 1.05rem;
+}
+
+.chart-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    height: 220px;
+    overflow-x: auto;
+    padding: 0 4px 4px;
+    border-bottom: 2px solid #d7e1f4;
+}
+
+.chart-bar-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    height: 100%;
+    min-width: 56px;
+}
+
+.chart-bar-value {
+    font-weight: 700;
+    color: #1f305f;
+    margin-bottom: 6px;
+    font-size: 0.85rem;
+}
+
+.chart-bar {
+    width: 34px;
+    border-radius: 6px 6px 0 0;
+    min-height: 6px;
+}
+
+.chart-bar-label {
+    margin-top: 8px;
+    font-size: 0.78rem;
+    color: #4a5679;
+    text-align: center;
+    max-width: 80px;
+    overflow-wrap: break-word;
+}
+
+.chart-pie-wrap {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.chart-pie {
+    width: 170px;
+    height: 170px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.chart-legend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chart-legend li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    color: #21335f;
+}
+
+.chart-legend__swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+@media (max-width: 720px) {
+    .charts-row {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* Step 5 IPCRF table */

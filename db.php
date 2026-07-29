@@ -63,6 +63,22 @@ if (!in_array('school_name', $existingUserColumns, true)) {
 $conn->query("ALTER TABLE users MODIFY COLUMN role VARCHAR(20) NOT NULL DEFAULT 'teacher'");
 
 /**
+ * Installs created from ipcrf.sql have a chk_users_role CHECK constraint that
+ * only allowed 'teacher'/'admin', silently blocking newer roles like
+ * 'super_admin' and 'principal'. Drop it if present so role checks live only
+ * in application code, matching this file's schema.
+ */
+$roleConstraintResult = $conn->query("
+    SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'users'
+      AND CONSTRAINT_NAME = 'chk_users_role'
+");
+if ($roleConstraintResult && $roleConstraintResult->num_rows > 0) {
+    $conn->query("ALTER TABLE users DROP CONSTRAINT chk_users_role");
+}
+
+/**
  * Ensure ipcrf_entries can store the full wizard submission (Parts I-IV)
  * as JSON, in addition to the original structured columns.
  */
@@ -77,5 +93,18 @@ if ($entriesColumnResult) {
 
 if (!empty($existingEntriesColumns) && !in_array('full_data', $existingEntriesColumns, true)) {
     $conn->query("ALTER TABLE ipcrf_entries ADD COLUMN full_data LONGTEXT NULL");
+}
+
+/**
+ * Track when a principal edits a teacher's IPCRF entry, so the teacher can
+ * see it was changed and by whom.
+ */
+if (!empty($existingEntriesColumns) && !in_array('edited_by', $existingEntriesColumns, true)) {
+    $conn->query("ALTER TABLE ipcrf_entries ADD COLUMN edited_by INT NULL");
+    $conn->query("ALTER TABLE ipcrf_entries ADD CONSTRAINT fk_entries_editor FOREIGN KEY (edited_by) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE");
+}
+
+if (!empty($existingEntriesColumns) && !in_array('edited_at', $existingEntriesColumns, true)) {
+    $conn->query("ALTER TABLE ipcrf_entries ADD COLUMN edited_at DATETIME NULL");
 }
 ?>

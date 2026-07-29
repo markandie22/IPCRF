@@ -27,7 +27,6 @@ CREATE TABLE users (
     password VARCHAR(255) NOT NULL,
     role VARCHAR(20) NOT NULL DEFAULT 'teacher',
     school_id INT NULL,
-    CONSTRAINT chk_users_role CHECK (role IN ('teacher', 'admin')),
     CONSTRAINT fk_users_school FOREIGN KEY (school_id) REFERENCES schools(id)
         ON UPDATE CASCADE
         ON DELETE SET NULL
@@ -41,7 +40,12 @@ CREATE TABLE ipcrf_entries (
     rating INT NOT NULL,
     remarks TEXT,
     full_data LONGTEXT NULL,
+    edited_by INT NULL,
+    edited_at DATETIME NULL,
     CONSTRAINT fk_entries_user FOREIGN KEY (user_id) REFERENCES users(id)
         ON UPDATE CASCADE
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+    CONSTRAINT fk_entries_editor FOREIGN KEY (edited_by) REFERENCES users(id)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

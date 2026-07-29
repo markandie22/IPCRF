@@ -174,6 +174,76 @@ body {
     border-bottom: none;
 }
 
+.submissions-card {
+    margin-top: 18px;
+    background: var(--gc-surface);
+    border: 1px solid var(--gc-border);
+    border-radius: var(--gc-radius);
+    padding: 20px;
+    box-shadow: 0 4px 14px rgba(32, 33, 36, 0.06);
+}
+
+.submissions-card h3 {
+    margin: 0 0 14px;
+    font-size: 1.1rem;
+    color: var(--gc-text);
+}
+
+.submissions-empty {
+    margin: 0;
+    color: var(--gc-muted);
+    font-size: 0.95rem;
+}
+
+.submissions-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--gc-border);
+    border-radius: 12px;
+}
+
+.submissions-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 720px;
+}
+
+.submissions-table thead th {
+    background: #f1f5fc;
+    color: var(--gc-text);
+    font-weight: 700;
+    text-align: left;
+    padding: 12px;
+    border-bottom: 1px solid var(--gc-border);
+}
+
+.submissions-table td {
+    padding: 12px;
+    border-bottom: 1px solid #eef1f6;
+    color: var(--gc-text);
+    vertical-align: top;
+    font-size: 0.92rem;
+}
+
+.submissions-table tbody tr:nth-child(even) {
+    background: #fbfcfe;
+}
+
+.submission-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: #fff4e0;
+    color: #9a5b00;
+    white-space: nowrap;
+}
+
+.submission-badge--muted {
+    background: #eef1f6;
+    color: var(--gc-muted);
+}
+
 @media (max-width: 900px) {
     .card {
         grid-column: span 12;

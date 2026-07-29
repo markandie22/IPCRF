@@ -2,13 +2,14 @@
 include("db.php");
 include("school_helper.php");
 
-if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['admin', 'super_admin'], true)) {
+if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['admin', 'super_admin', 'principal'], true)) {
     die("Access denied.");
 }
 
+$isPrincipal = $_SESSION['role'] === 'principal';
 $bataanPublicSchools = get_bataan_public_schools();
 
-$selectedSchool = trim($_GET['school'] ?? '');
+$selectedSchool = $isPrincipal ? trim($_SESSION['school_name'] ?? '') : trim($_GET['school'] ?? '');
 $resetStatus = trim($_GET['reset_status'] ?? '');
 $resetEmail = trim($_GET['reset_email'] ?? '');
 $adminResetMessage = '';
@@ -24,7 +25,7 @@ if ($resetStatus === 'success') {
     $adminResetMessage = '<div class="message">Failed to reset password.</div>';
 }
 
-$sql = "SELECT u.name, e.objective, e.performance_indicator, e.rating, e.remarks,
+$sql = "SELECT e.id, u.name, e.objective, e.performance_indicator, e.rating, e.remarks, e.edited_at,
                COALESCE(NULLIF(TRIM(u.school_name), ''), 'N/A') AS school_name
         FROM ipcrf_entries e
         JOIN users u ON e.user_id = u.id";
@@ -32,7 +33,7 @@ $sql = "SELECT u.name, e.objective, e.performance_indicator, e.rating, e.remarks
 $params = [];
 $types = "";
 
-if ($selectedSchool !== '') {
+if ($selectedSchool !== '' || $isPrincipal) {
     $sql .= " WHERE u.school_name = ?";
     $params[] = $selectedSchool;
     $types .= "s";
@@ -59,11 +60,22 @@ $result = $stmt->get_result();
     <div class="admin-card">
         <div class="admin-header">
             <div>
-                <h2>Admin View - IPCRF Records</h2>
-                <p>Monitor teacher submissions and filter by public schools in Bataan.</p>
+                <h2><?php echo $isPrincipal ? 'Principal View - IPCRF Records' : 'Admin View - IPCRF Records'; ?></h2>
+                <p>
+                    <?php if ($isPrincipal): ?>
+                        Monitor teacher submissions for <?php echo htmlspecialchars($selectedSchool !== '' ? $selectedSchool : 'your school'); ?>.
+                    <?php else: ?>
+                        Monitor teacher submissions and filter by public schools in Bataan.
+                    <?php endif; ?>
+                </p>
             </div>
             <div class="admin-actions">
+                <?php if ($isPrincipal): ?>
+                <a class="btn btn-inline" href="principal_dashboard.php">Dashboard</a>
+                <?php else: ?>
+                <a class="btn btn-inline" href="admin_create_principal.php">Create Principal Account</a>
                 <a class="btn btn-inline" href="export_ipcrf.php">Download Excel Report</a>
+                <?php endif; ?>
                 <a class="btn btn-inline btn-muted" href="logout.php">Logout</a>
             </div>
         </div>
@@ -81,6 +93,7 @@ $result = $stmt->get_result();
         </form>
         <?php endif; ?>
 
+        <?php if (!$isPrincipal): ?>
         <form method="GET" class="admin-filter">
             <label for="school">Public School (Bataan)</label>
             <select id="school" name="school">
@@ -94,6 +107,7 @@ $result = $stmt->get_result();
             <button type="submit" class="btn btn-inline">Apply Filter</button>
             <a href="view_ipcrf.php" class="link-btn">Reset</a>
         </form>
+        <?php endif; ?>
 
         <div class="admin-table-wrap">
             <table class="admin-table">
@@ -105,6 +119,10 @@ $result = $stmt->get_result();
                         <th>Performance Indicator</th>
                         <th>Rating</th>
                         <th>Remarks</th>
+                        <?php if ($isPrincipal): ?>
+                        <th>Status</th>
+                        <th>Actions</th>
+                        <?php endif; ?>
                     </tr>
                 </thead>
                 <tbody>
@@ -117,11 +135,19 @@ $result = $stmt->get_result();
                             <td><?php echo htmlspecialchars($row['performance_indicator']); ?></td>
                             <td><?php echo htmlspecialchars($row['rating']); ?></td>
                             <td><?php echo htmlspecialchars($row['remarks']); ?></td>
+                            <?php if ($isPrincipal): ?>
+                            <td>
+                                <?php if ($row['edited_at']): ?>
+                                    <span class="badge badge--muted">Edited</span>
+                                <?php endif; ?>
+                            </td>
+                            <td><a class="link-btn" href="principal_edit_entry.php?id=<?php echo (int)$row['id']; ?>">View / Edit</a></td>
+                            <?php endif; ?>
                         </tr>
                     <?php endwhile; ?>
                 <?php else: ?>
                     <tr>
-                        <td colspan="6" class="admin-empty">No IPCRF records found for the selected filter.</td>
+                        <td colspan="<?php echo $isPrincipal ? 8 : 6; ?>" class="admin-empty">No IPCRF records found for the selected filter.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>
