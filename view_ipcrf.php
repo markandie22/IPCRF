@@ -28,13 +28,14 @@ if ($resetStatus === 'success') {
 $sql = "SELECT e.id, u.name, e.objective, e.performance_indicator, e.rating, e.remarks, e.edited_at,
                COALESCE(NULLIF(TRIM(u.school_name), ''), 'N/A') AS school_name
         FROM ipcrf_entries e
-        JOIN users u ON e.user_id = u.id";
+        JOIN users u ON e.user_id = u.id
+        WHERE e.status = 'submitted'";
 
 $params = [];
 $types = "";
 
 if ($selectedSchool !== '' || $isPrincipal) {
-    $sql .= " WHERE u.school_name = ?";
+    $sql .= " AND u.school_name = ?";
     $params[] = $selectedSchool;
     $types .= "s";
 }

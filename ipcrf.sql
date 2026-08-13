@@ -42,6 +42,9 @@ CREATE TABLE ipcrf_entries (
     full_data LONGTEXT NULL,
     edited_by INT NULL,
     edited_at DATETIME NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'submitted',
+    last_step INT NULL,
+    updated_at DATETIME NULL,
     CONSTRAINT fk_entries_user FOREIGN KEY (user_id) REFERENCES users(id)
         ON UPDATE CASCADE
         ON DELETE CASCADE,

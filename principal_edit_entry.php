@@ -32,12 +32,12 @@ if (isset($_POST['update_entry'])) {
         $updateMessage = '<div class="message">Please complete all required fields with a valid rating (1-5).</div>';
     } else {
         // Re-check the entry still belongs to this principal's school before writing.
-        $ownerStmt = $conn->prepare("SELECT u.school_name FROM ipcrf_entries e JOIN users u ON e.user_id = u.id WHERE e.id = ?");
+        $ownerStmt = $conn->prepare("SELECT u.school_name, e.status FROM ipcrf_entries e JOIN users u ON e.user_id = u.id WHERE e.id = ?");
         $ownerStmt->bind_param("i", $entryId);
         $ownerStmt->execute();
         $ownerRow = $ownerStmt->get_result()->fetch_assoc();
 
-        if (!$ownerRow || $ownerRow['school_name'] !== $principalSchool) {
+        if (!$ownerRow || $ownerRow['school_name'] !== $principalSchool || $ownerRow['status'] !== 'submitted') {
             die("Access denied.");
         }
 
@@ -66,7 +66,7 @@ $stmt = $conn->prepare(
      FROM ipcrf_entries e
      JOIN users u ON e.user_id = u.id
      LEFT JOIN users editor ON editor.id = e.edited_by
-     WHERE e.id = ?"
+     WHERE e.id = ? AND e.status = 'submitted'"
 );
 $stmt->bind_param("i", $entryId);
 $stmt->execute();

@@ -13,6 +13,42 @@ $userStmt->bind_param("i", $_SESSION['user_id']);
 $userStmt->execute();
 $currentUser = $userStmt->get_result()->fetch_assoc();
 
+// Load the teacher's single in-progress draft (if any) so the wizard can be
+// repopulated and resumed on the step they last left off on. Completed
+// parts stay filled in; only the unfinished steps are still blank.
+$draftValues = [];
+$resumeStep = 1;
+$draftStmt = $conn->prepare("SELECT full_data, last_step FROM ipcrf_entries WHERE user_id = ? AND status = 'draft' LIMIT 1");
+$draftStmt->bind_param("i", $_SESSION['user_id']);
+$draftStmt->execute();
+$draftRow = $draftStmt->get_result()->fetch_assoc();
+if ($draftRow) {
+    $decoded = json_decode($draftRow['full_data'] ?? '', true);
+    if (is_array($decoded)) {
+        $draftValues = $decoded;
+    }
+    $resumeStep = (int)($draftRow['last_step'] ?: 1);
+    if ($resumeStep < 1) $resumeStep = 1;
+    if ($resumeStep > 8) $resumeStep = 8;
+}
+
+function fval($name, $default = '') {
+    global $draftValues;
+    $v = $draftValues[$name] ?? $default;
+    return htmlspecialchars(is_array($v) ? '' : (string)$v);
+}
+function fchecked($name, $value) {
+    global $draftValues;
+    $arr = $draftValues[$name] ?? [];
+    if (!is_array($arr)) return '';
+    return in_array((string)$value, array_map('strval', $arr), true) ? 'checked' : '';
+}
+function fselected($name, $value) {
+    global $draftValues;
+    if (!array_key_exists($name, $draftValues)) return '';
+    return ((string)$draftValues[$name] === (string)$value) ? 'selected' : '';
+}
+
 $message = "";
 $jumpToLastStep = false;
 
@@ -27,8 +63,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_ipcrf'])) {
         $message = '<div class="message">Please complete all required fields with a valid rating (1-5).</div>';
         $jumpToLastStep = true;
     } else {
-        $stmt = $conn->prepare("INSERT INTO ipcrf_entries (user_id, objective, performance_indicator, rating, remarks, full_data) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("ississ", $_SESSION['user_id'], $objective, $performanceIndicator, $rating, $remarks, $fullData);
+        // If an autosaved draft exists, finalize it in place instead of
+        // creating a second row, so this submission carries the full
+        // step-by-step history the teacher already saved.
+        if ($draftRow) {
+            $stmt = $conn->prepare(
+                "UPDATE ipcrf_entries
+                 SET objective = ?, performance_indicator = ?, rating = ?, remarks = ?, full_data = ?, status = 'submitted', last_step = 8, updated_at = NOW()
+                 WHERE user_id = ? AND status = 'draft'"
+            );
+            $stmt->bind_param("ssissi", $objective, $performanceIndicator, $rating, $remarks, $fullData, $_SESSION['user_id']);
+        } else {
+            $stmt = $conn->prepare(
+                "INSERT INTO ipcrf_entries (user_id, objective, performance_indicator, rating, remarks, full_data, status, last_step, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, 'submitted', 8, NOW())"
+            );
+            $stmt->bind_param("ississ", $_SESSION['user_id'], $objective, $performanceIndicator, $rating, $remarks, $fullData);
+        }
 
         if ($stmt->execute()) {
             // Post/Redirect/Get: prevents a page refresh from re-submitting
@@ -236,15 +287,18 @@ $competencies = [
 ];
 
 function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
+    global $draftValues;
     $attrs = '';
     if ($dataObj !== '') {
         $attrs .= " data-obj=\"$dataObj\" data-qe=\"$dataQe\"";
     }
+    $selectedValue = $draftValues[$name] ?? '';
     $html = "<select name=\"$name\" class=\"ipcrf-rating-select $extraClass\"$attrs>";
     $html .= '<option value="">--</option>';
     $labels = [5 => '5 - Outstanding', 4 => '4 - Very Satisfactory', 3 => '3 - Satisfactory', 2 => '2 - Unsatisfactory', 1 => '1 - Poor'];
     foreach ($labels as $val => $lab) {
-        $html .= "<option value=\"$val\">$lab</option>";
+        $sel = ((string)$selectedValue === (string)$val) ? ' selected' : '';
+        $html .= "<option value=\"$val\"$sel>$lab</option>";
     }
     $html .= '</select>';
     return $html;
@@ -284,15 +338,15 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
 
                 <div class="intro-grid">
                     <label for="school_year">School Year:</label>
-                    <input type="text" id="school_year" name="school_year" value="2025-2026" required>
+                    <input type="text" id="school_year" name="school_year" value="<?php echo fval('school_year', '2025-2026'); ?>" required>
 
                     <label for="career_stage">Select Career Stage:</label>
                     <select id="career_stage" name="career_stage" required>
                         <option value="">-- Select Career Stage --</option>
-                        <option value="Beginning towards Proficient">Beginning towards Proficient</option>
-                        <option value="Proficient">Proficient</option>
-                        <option value="Highly Proficient">Highly Proficient</option>
-                        <option value="Distinguished">Distinguished</option>
+                        <option value="Beginning towards Proficient" <?php echo fselected('career_stage', 'Beginning towards Proficient'); ?>>Beginning towards Proficient</option>
+                        <option value="Proficient" <?php echo fselected('career_stage', 'Proficient'); ?>>Proficient</option>
+                        <option value="Highly Proficient" <?php echo fselected('career_stage', 'Highly Proficient'); ?>>Highly Proficient</option>
+                        <option value="Distinguished" <?php echo fselected('career_stage', 'Distinguished'); ?>>Distinguished</option>
                     </select>
                 </div>
 
@@ -307,23 +361,23 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                 <h2>Step 2: Quick Entry (saved to your record)</h2>
 
                 <label for="objective">Objective</label>
-                <textarea id="objective" name="objective" rows="4" required></textarea>
+                <textarea id="objective" name="objective" rows="4" required><?php echo fval('objective'); ?></textarea>
 
                 <label for="performance_indicator">Performance Indicator</label>
-                <textarea id="performance_indicator" name="performance_indicator" rows="4" required></textarea>
+                <textarea id="performance_indicator" name="performance_indicator" rows="4" required><?php echo fval('performance_indicator'); ?></textarea>
 
                 <label for="rating">Rating (1-5)</label>
                 <select id="rating" name="rating" required>
                     <option value="">-- Select Rating --</option>
-                    <option value="1">1 - Needs Improvement</option>
-                    <option value="2">2 - Fair</option>
-                    <option value="3">3 - Satisfactory</option>
-                    <option value="4">4 - Very Satisfactory</option>
-                    <option value="5">5 - Outstanding</option>
+                    <option value="1" <?php echo fselected('rating', '1'); ?>>1 - Needs Improvement</option>
+                    <option value="2" <?php echo fselected('rating', '2'); ?>>2 - Fair</option>
+                    <option value="3" <?php echo fselected('rating', '3'); ?>>3 - Satisfactory</option>
+                    <option value="4" <?php echo fselected('rating', '4'); ?>>4 - Very Satisfactory</option>
+                    <option value="5" <?php echo fselected('rating', '5'); ?>>5 - Outstanding</option>
                 </select>
 
                 <label for="remarks">Remarks</label>
-                <textarea id="remarks" name="remarks" rows="3"></textarea>
+                <textarea id="remarks" name="remarks" rows="3"><?php echo fval('remarks'); ?></textarea>
 
                 <div class="wizard-actions split">
                     <button type="button" class="btn-back" data-back="1">Back</button>
@@ -341,32 +395,32 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                     <legend>Personal Information</legend>
                     <div class="demo-grid demo-grid-3">
                         <label for="last_name">Last Name <span class="required-mark">*</span></label>
-                        <input type="text" id="last_name" name="last_name" required>
+                        <input type="text" id="last_name" name="last_name" value="<?php echo fval('last_name'); ?>" required>
 
                         <label for="first_name">First Name <span class="required-mark">*</span></label>
-                        <input type="text" id="first_name" name="first_name" required>
+                        <input type="text" id="first_name" name="first_name" value="<?php echo fval('first_name'); ?>" required>
 
                         <label for="middle_name">Middle Name</label>
-                        <input type="text" id="middle_name" name="middle_name">
+                        <input type="text" id="middle_name" name="middle_name" value="<?php echo fval('middle_name'); ?>">
 
                         <label for="sex">Sex <span class="required-mark">*</span></label>
                         <select id="sex" name="sex" required>
                             <option value="">-- Select --</option>
-                            <option value="Male">Male</option>
-                            <option value="Female">Female</option>
+                            <option value="Male" <?php echo fselected('sex', 'Male'); ?>>Male</option>
+                            <option value="Female" <?php echo fselected('sex', 'Female'); ?>>Female</option>
                         </select>
 
                         <label for="age">Age</label>
-                        <input type="number" id="age" name="age" min="18" max="70" placeholder="e.g., 30">
+                        <input type="number" id="age" name="age" min="18" max="70" placeholder="e.g., 30" value="<?php echo fval('age'); ?>">
 
                         <label for="employee_id">Employee ID</label>
-                        <input type="text" id="employee_id" name="employee_id">
+                        <input type="text" id="employee_id" name="employee_id" value="<?php echo fval('employee_id'); ?>">
 
                         <label for="deped_email">DepEd Email Address</label>
-                        <input type="email" id="deped_email" name="deped_email" placeholder="name@deped.gov.ph">
+                        <input type="email" id="deped_email" name="deped_email" placeholder="name@deped.gov.ph" value="<?php echo fval('deped_email'); ?>">
 
                         <label for="tin">TIN</label>
-                        <input type="text" id="tin" name="tin" maxlength="20" placeholder="e.g., 123-456-789-000">
+                        <input type="text" id="tin" name="tin" maxlength="20" placeholder="e.g., 123-456-789-000" value="<?php echo fval('tin'); ?>">
                     </div>
                 </fieldset>
 
@@ -382,47 +436,48 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                         <label for="school_name">CLC / School Name <span class="required-mark">*</span></label>
                         <select id="school_name" name="school_name" required>
                             <option value="">-- Select School --</option>
+                            <?php $defaultSchool = fval('school_name', $currentUser['school_name'] ?? ''); ?>
                             <?php foreach ($bataanSchools as $schoolOption): ?>
-                                <option value="<?php echo htmlspecialchars($schoolOption); ?>" <?php echo (($currentUser['school_name'] ?? '') === $schoolOption) ? 'selected' : ''; ?>>
+                                <option value="<?php echo htmlspecialchars($schoolOption); ?>" <?php echo ($defaultSchool === $schoolOption) ? 'selected' : ''; ?>>
                                     <?php echo htmlspecialchars($schoolOption); ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
 
                         <label for="school_id">School ID</label>
-                        <input type="text" id="school_id" name="school_id" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="e.g., 300001">
+                        <input type="text" id="school_id" name="school_id" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="e.g., 300001" value="<?php echo fval('school_id'); ?>">
 
                         <label for="school_type">School Type</label>
                         <select id="school_type" name="school_type">
                             <option value="">-- Select --</option>
-                            <option value="Elementary">Elementary</option>
-                            <option value="Junior High School">Junior High School</option>
-                            <option value="Senior High School">Senior High School</option>
-                            <option value="Integrated School (Elementary & JHS)">Integrated School (Elementary &amp; JHS)</option>
-                            <option value="Integrated School (JHS & SHS)">Integrated School (JHS &amp; SHS)</option>
-                            <option value="Integrated School (Elementary, JHS & SHS)">Integrated School (Elementary, JHS &amp; SHS)</option>
+                            <option value="Elementary" <?php echo fselected('school_type', 'Elementary'); ?>>Elementary</option>
+                            <option value="Junior High School" <?php echo fselected('school_type', 'Junior High School'); ?>>Junior High School</option>
+                            <option value="Senior High School" <?php echo fselected('school_type', 'Senior High School'); ?>>Senior High School</option>
+                            <option value="Integrated School (Elementary & JHS)" <?php echo fselected('school_type', 'Integrated School (Elementary & JHS)'); ?>>Integrated School (Elementary &amp; JHS)</option>
+                            <option value="Integrated School (JHS & SHS)" <?php echo fselected('school_type', 'Integrated School (JHS & SHS)'); ?>>Integrated School (JHS &amp; SHS)</option>
+                            <option value="Integrated School (Elementary, JHS & SHS)" <?php echo fselected('school_type', 'Integrated School (Elementary, JHS & SHS)'); ?>>Integrated School (Elementary, JHS &amp; SHS)</option>
                         </select>
 
                         <label for="school_size">School Size</label>
                         <select id="school_size" name="school_size">
                             <option value="">-- Select --</option>
-                            <option value="Small (1-149 learners)">Small (1-149 learners)</option>
-                            <option value="Medium (150-499 learners)">Medium (150-499 learners)</option>
-                            <option value="Large (500-1499 learners)">Large (500-1499 learners)</option>
-                            <option value="Very Large (1500+ learners)">Very Large (1500+ learners)</option>
+                            <option value="Small (1-149 learners)" <?php echo fselected('school_size', 'Small (1-149 learners)'); ?>>Small (1-149 learners)</option>
+                            <option value="Medium (150-499 learners)" <?php echo fselected('school_size', 'Medium (150-499 learners)'); ?>>Medium (150-499 learners)</option>
+                            <option value="Large (500-1499 learners)" <?php echo fselected('school_size', 'Large (500-1499 learners)'); ?>>Large (500-1499 learners)</option>
+                            <option value="Very Large (1500+ learners)" <?php echo fselected('school_size', 'Very Large (1500+ learners)'); ?>>Very Large (1500+ learners)</option>
                         </select>
 
                         <label for="curricular_classification">Curricular Classification</label>
                         <select id="curricular_classification" name="curricular_classification">
                             <option value="">-- Select --</option>
-                            <option value="Purely Elementary">Purely Elementary</option>
-                            <option value="Purely Junior High School">Purely Junior High School</option>
-                            <option value="Purely Senior High School">Purely Senior High School</option>
-                            <option value="Elementary with SHS">Elementary with SHS</option>
-                            <option value="Junior HS with SHS">Junior HS with SHS</option>
-                            <option value="Elementary, JHS and SHS">Elementary, JHS and SHS</option>
-                            <option value="With Special Education (SPED) Program">With Special Education (SPED) Program</option>
-                            <option value="With Alternative Learning System (ALS) Program">With Alternative Learning System (ALS) Program</option>
+                            <option value="Purely Elementary" <?php echo fselected('curricular_classification', 'Purely Elementary'); ?>>Purely Elementary</option>
+                            <option value="Purely Junior High School" <?php echo fselected('curricular_classification', 'Purely Junior High School'); ?>>Purely Junior High School</option>
+                            <option value="Purely Senior High School" <?php echo fselected('curricular_classification', 'Purely Senior High School'); ?>>Purely Senior High School</option>
+                            <option value="Elementary with SHS" <?php echo fselected('curricular_classification', 'Elementary with SHS'); ?>>Elementary with SHS</option>
+                            <option value="Junior HS with SHS" <?php echo fselected('curricular_classification', 'Junior HS with SHS'); ?>>Junior HS with SHS</option>
+                            <option value="Elementary, JHS and SHS" <?php echo fselected('curricular_classification', 'Elementary, JHS and SHS'); ?>>Elementary, JHS and SHS</option>
+                            <option value="With Special Education (SPED) Program" <?php echo fselected('curricular_classification', 'With Special Education (SPED) Program'); ?>>With Special Education (SPED) Program</option>
+                            <option value="With Alternative Learning System (ALS) Program" <?php echo fselected('curricular_classification', 'With Alternative Learning System (ALS) Program'); ?>>With Alternative Learning System (ALS) Program</option>
                         </select>
                     </div>
                 </fieldset>
@@ -433,58 +488,44 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                         <label for="position">Position <span class="required-mark">*</span></label>
                         <select id="position" name="position" required>
                             <option value="">-- Select --</option>
-                            <option value="Teacher I">Teacher I</option>
-                            <option value="Teacher II">Teacher II</option>
-                            <option value="Teacher III">Teacher III</option>
-                            <option value="Master Teacher I">Master Teacher I</option>
-                            <option value="Master Teacher II">Master Teacher II</option>
-                            <option value="Master Teacher III">Master Teacher III</option>
-                            <option value="Master Teacher IV">Master Teacher IV</option>
-                            <option value="Head Teacher I">Head Teacher I</option>
-                            <option value="Head Teacher II">Head Teacher II</option>
-                            <option value="Head Teacher III">Head Teacher III</option>
-                            <option value="Head Teacher IV">Head Teacher IV</option>
-                            <option value="Head Teacher V">Head Teacher V</option>
-                            <option value="Head Teacher VI">Head Teacher VI</option>
-                            <option value="School Principal I">School Principal I</option>
-                            <option value="School Principal II">School Principal II</option>
-                            <option value="School Principal III">School Principal III</option>
-                            <option value="School Principal IV">School Principal IV</option>
+                            <?php foreach (['Teacher I', 'Teacher II', 'Teacher III', 'Master Teacher I', 'Master Teacher II', 'Master Teacher III', 'Master Teacher IV', 'Head Teacher I', 'Head Teacher II', 'Head Teacher III', 'Head Teacher IV', 'Head Teacher V', 'Head Teacher VI', 'School Principal I', 'School Principal II', 'School Principal III', 'School Principal IV'] as $posOption): ?>
+                                <option value="<?php echo htmlspecialchars($posOption); ?>" <?php echo fselected('position', $posOption); ?>><?php echo htmlspecialchars($posOption); ?></option>
+                            <?php endforeach; ?>
                         </select>
 
                         <label for="employment_status">Employment Status <span class="required-mark">*</span></label>
                         <select id="employment_status" name="employment_status" required>
                             <option value="">-- Select --</option>
-                            <option value="Permanent">Permanent</option>
-                            <option value="Temporary">Temporary</option>
-                            <option value="Provisional">Provisional</option>
-                            <option value="Contractual">Contractual</option>
-                            <option value="Substitute">Substitute</option>
-                            <option value="Co-Terminus">Co-Terminus</option>
+                            <option value="Permanent" <?php echo fselected('employment_status', 'Permanent'); ?>>Permanent</option>
+                            <option value="Temporary" <?php echo fselected('employment_status', 'Temporary'); ?>>Temporary</option>
+                            <option value="Provisional" <?php echo fselected('employment_status', 'Provisional'); ?>>Provisional</option>
+                            <option value="Contractual" <?php echo fselected('employment_status', 'Contractual'); ?>>Contractual</option>
+                            <option value="Substitute" <?php echo fselected('employment_status', 'Substitute'); ?>>Substitute</option>
+                            <option value="Co-Terminus" <?php echo fselected('employment_status', 'Co-Terminus'); ?>>Co-Terminus</option>
                         </select>
 
                         <label for="years_teaching">Number of Years in Teaching</label>
-                        <input type="number" id="years_teaching" name="years_teaching" min="0" max="50" placeholder="e.g., 5">
+                        <input type="number" id="years_teaching" name="years_teaching" min="0" max="50" placeholder="e.g., 5" value="<?php echo fval('years_teaching'); ?>">
 
                         <label for="highest_degree">Highest Degree Obtained</label>
                         <select id="highest_degree" name="highest_degree">
                             <option value="">-- Select --</option>
-                            <option value="Bachelor's Degree">Bachelor's Degree</option>
-                            <option value="Bachelor's Degree with Master's Units">Bachelor's Degree with Master's Units</option>
-                            <option value="Master's Degree Graduate">Master's Degree Graduate</option>
-                            <option value="Master's Degree with Doctorate Units">Master's Degree with Doctorate Units</option>
-                            <option value="Doctorate Degree Graduate">Doctorate Degree Graduate</option>
+                            <option value="Bachelor's Degree" <?php echo fselected('highest_degree', "Bachelor's Degree"); ?>>Bachelor's Degree</option>
+                            <option value="Bachelor's Degree with Master's Units" <?php echo fselected('highest_degree', "Bachelor's Degree with Master's Units"); ?>>Bachelor's Degree with Master's Units</option>
+                            <option value="Master's Degree Graduate" <?php echo fselected('highest_degree', "Master's Degree Graduate"); ?>>Master's Degree Graduate</option>
+                            <option value="Master's Degree with Doctorate Units" <?php echo fselected('highest_degree', "Master's Degree with Doctorate Units"); ?>>Master's Degree with Doctorate Units</option>
+                            <option value="Doctorate Degree Graduate" <?php echo fselected('highest_degree', 'Doctorate Degree Graduate'); ?>>Doctorate Degree Graduate</option>
                         </select>
 
                         <label for="level_taught">Level Taught</label>
                         <select id="level_taught" name="level_taught">
                             <option value="">-- Select --</option>
-                            <option value="Kindergarten">Kindergarten</option>
-                            <option value="Elementary (Grades 1-6)">Elementary (Grades 1-6)</option>
-                            <option value="Junior High School (Grades 7-10)">Junior High School (Grades 7-10)</option>
-                            <option value="Senior High School (Grades 11-12)">Senior High School (Grades 11-12)</option>
-                            <option value="SPED">SPED</option>
-                            <option value="ALS">ALS</option>
+                            <option value="Kindergarten" <?php echo fselected('level_taught', 'Kindergarten'); ?>>Kindergarten</option>
+                            <option value="Elementary (Grades 1-6)" <?php echo fselected('level_taught', 'Elementary (Grades 1-6)'); ?>>Elementary (Grades 1-6)</option>
+                            <option value="Junior High School (Grades 7-10)" <?php echo fselected('level_taught', 'Junior High School (Grades 7-10)'); ?>>Junior High School (Grades 7-10)</option>
+                            <option value="Senior High School (Grades 11-12)" <?php echo fselected('level_taught', 'Senior High School (Grades 11-12)'); ?>>Senior High School (Grades 11-12)</option>
+                            <option value="SPED" <?php echo fselected('level_taught', 'SPED'); ?>>SPED</option>
+                            <option value="ALS" <?php echo fselected('level_taught', 'ALS'); ?>>ALS</option>
                         </select>
                     </div>
                 </fieldset>
@@ -494,52 +535,23 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                     <div class="checkbox-panel">
                         <h3>AREA(S) OF SPECIALIZATION</h3>
                         <div class="checkbox-grid">
-                            <label><input type="checkbox" name="specialization[]" value="English"> English</label>
-                            <label><input type="checkbox" name="specialization[]" value="Values Education"> Values Education</label>
-                            <label><input type="checkbox" name="specialization[]" value="Filipino"> Filipino</label>
-                            <label><input type="checkbox" name="specialization[]" value="SPED"> SPED</label>
-                            <label><input type="checkbox" name="specialization[]" value="Mathematics"> Mathematics</label>
-                            <label><input type="checkbox" name="specialization[]" value="Music"> Music</label>
-                            <label><input type="checkbox" name="specialization[]" value="General Science"> General Science</label>
-                            <label><input type="checkbox" name="specialization[]" value="Arts"> Arts</label>
-                            <label><input type="checkbox" name="specialization[]" value="Biology"> Biology</label>
-                            <label><input type="checkbox" name="specialization[]" value="Physical Education"> Physical Education</label>
-                            <label><input type="checkbox" name="specialization[]" value="Chemistry"> Chemistry</label>
-                            <label><input type="checkbox" name="specialization[]" value="Health"> Health</label>
-                            <label><input type="checkbox" name="specialization[]" value="Physics"> Physics</label>
-                            <label><input type="checkbox" name="specialization[]" value="TLE/HE/TVL"> TLE/HE/TVL</label>
-                            <label><input type="checkbox" name="specialization[]" value="Social Science"> Social Science</label>
-                            <label><input type="checkbox" name="specialization[]" value="Early Childhood Education"> Early Childhood Education</label>
+                            <?php foreach (['English', 'Values Education', 'Filipino', 'SPED', 'Mathematics', 'Music', 'General Science', 'Arts', 'Biology', 'Physical Education', 'Chemistry', 'Health', 'Physics', 'TLE/HE/TVL', 'Social Science', 'Early Childhood Education'] as $specOption): ?>
+                                <label><input type="checkbox" name="specialization[]" value="<?php echo htmlspecialchars($specOption); ?>" <?php echo fchecked('specialization', $specOption); ?>> <?php echo htmlspecialchars($specOption); ?></label>
+                            <?php endforeach; ?>
                         </div>
                         <label for="specialization_others">Others (specify)</label>
-                        <input type="text" id="specialization_others" name="specialization_others">
+                        <input type="text" id="specialization_others" name="specialization_others" value="<?php echo fval('specialization_others'); ?>">
                     </div>
 
                     <div class="checkbox-panel">
                         <h3>SUBJECT(S) TAUGHT</h3>
                         <div class="checkbox-grid">
-                            <label><input type="checkbox" name="subjects_taught[]" value="All Subjects"> All Subjects</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="PE and Health"> PE and Health</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="MTB-MLE"> MTB-MLE</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="Makabansa"> Makabansa</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="Madrasah ALIVE"> Madrasah ALIVE</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="Languages / Reading and Literacy"> Languages / Reading and Literacy</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="Filipino"> Filipino</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="TLE/EPP-HE"> TLE/EPP-HE</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="English"> English</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="TLE/EPP-LE/Tech-Voc"> TLE/EPP-LE/Tech-Voc</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="Mathematics"> Mathematics</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="ALS"> ALS</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="Science / Physical and Natural Environment"> Science / Physical and Natural Environment</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="IPED"> IPED</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="Araling Panlipunan"> Araling Panlipunan</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="Special Programs"> Special Programs</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="GMRC / EsP"> GMRC / EsP</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="MAPEH"> MAPEH</label>
-                            <label><input type="checkbox" name="subjects_taught[]" value="Music and Arts"> Music and Arts</label>
+                            <?php foreach (['All Subjects', 'PE and Health', 'MTB-MLE', 'Makabansa', 'Madrasah ALIVE', 'Languages / Reading and Literacy', 'Filipino', 'TLE/EPP-HE', 'English', 'TLE/EPP-LE/Tech-Voc', 'Mathematics', 'ALS', 'Science / Physical and Natural Environment', 'IPED', 'Araling Panlipunan', 'Special Programs', 'GMRC / EsP', 'MAPEH', 'Music and Arts'] as $subjOption): ?>
+                                <label><input type="checkbox" name="subjects_taught[]" value="<?php echo htmlspecialchars($subjOption); ?>" <?php echo fchecked('subjects_taught', $subjOption); ?>> <?php echo htmlspecialchars($subjOption); ?></label>
+                            <?php endforeach; ?>
                         </div>
                         <label for="subjects_others">Others (specify)</label>
-                        <input type="text" id="subjects_others" name="subjects_others">
+                        <input type="text" id="subjects_others" name="subjects_others" value="<?php echo fval('subjects_others'); ?>">
                     </div>
                 </div>
 
@@ -560,30 +572,30 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                         <th colspan="3">Name of Employee:</th>
                         <td colspan="4"><input type="text" id="s5_employee_name" name="s5_employee_name" readonly></td>
                         <th>RATER Last Name:</th>
-                        <td><input type="text" name="s5_rater_last"></td>
+                        <td><input type="text" name="s5_rater_last" value="<?php echo fval('s5_rater_last'); ?>"></td>
                         <th>First:</th>
-                        <td><input type="text" name="s5_rater_first"></td>
+                        <td><input type="text" name="s5_rater_first" value="<?php echo fval('s5_rater_first'); ?>"></td>
                         <th>Middle:</th>
-                        <td><input type="text" name="s5_rater_middle"></td>
+                        <td><input type="text" name="s5_rater_middle" value="<?php echo fval('s5_rater_middle'); ?>"></td>
                     </tr>
                     <tr>
                         <th colspan="3">Position:</th>
                         <td colspan="4"><input type="text" id="s5_employee_position" name="s5_employee_position" readonly></td>
                         <th>Position:</th>
-                        <td><input type="text" name="s5_rater_position"></td>
+                        <td><input type="text" name="s5_rater_position" value="<?php echo fval('s5_rater_position'); ?>"></td>
                         <th>Email:</th>
-                        <td colspan="3"><input type="email" name="s5_rater_email"></td>
+                        <td colspan="3"><input type="email" name="s5_rater_email" value="<?php echo fval('s5_rater_email'); ?>"></td>
                     </tr>
                     <tr>
                         <th colspan="3">Bureau/Center/Service/Division:</th>
                         <td colspan="4"><input type="text" id="s5_bureau" name="s5_bureau" readonly></td>
                         <th>Date of Review:</th>
-                        <td><input type="text" name="s5_date_review" placeholder="YYYY-MM-DD"></td>
+                        <td><input type="text" name="s5_date_review" placeholder="YYYY-MM-DD" value="<?php echo fval('s5_date_review'); ?>"></td>
                         <td colspan="4"></td>
                     </tr>
                     <tr>
                         <th colspan="3">Rating Period:</th>
-                        <td colspan="11"><input type="text" name="s5_rating_period" placeholder="SY 2025-2026"></td>
+                        <td colspan="11"><input type="text" name="s5_rating_period" placeholder="SY 2025-2026" value="<?php echo fval('s5_rating_period'); ?>"></td>
                     </tr>
                 </table>
 
@@ -621,7 +633,7 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                             <?php foreach ([5,4,3,2,1] as $lvl): ?>
                                 <td class="rubric-cell"><?php echo htmlspecialchars($o['quality'][$lvl]); ?></td>
                             <?php endforeach; ?>
-                            <td><textarea name="s5_actual_<?php echo $num; ?>_q" rows="2" placeholder="Describe actual results for Quality"></textarea></td>
+                            <td><textarea name="s5_actual_<?php echo $num; ?>_q" rows="2" placeholder="Describe actual results for Quality"><?php echo fval("s5_actual_{$num}_q"); ?></textarea></td>
                             <td><?php echo ratingSelect("s5_rating_{$num}_q", '', $num, 'q'); ?></td>
                             <td rowspan="<?php echo $rowspan; ?>"><input type="text" id="s5_ave_<?php echo $num; ?>" name="s5_ave_<?php echo $num; ?>" readonly></td>
                             <td rowspan="<?php echo $rowspan; ?>"><input type="text" id="s5_score_<?php echo $num; ?>" name="s5_score_<?php echo $num; ?>" readonly></td>
@@ -632,7 +644,7 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                             <?php foreach ([5,4,3,2,1] as $lvl): ?>
                                 <td class="rubric-cell"><?php echo htmlspecialchars($o['efficiency'][$lvl]); ?></td>
                             <?php endforeach; ?>
-                            <td><textarea name="s5_actual_<?php echo $num; ?>_e" rows="2" placeholder="Describe actual results for Efficiency"></textarea></td>
+                            <td><textarea name="s5_actual_<?php echo $num; ?>_e" rows="2" placeholder="Describe actual results for Efficiency"><?php echo fval("s5_actual_{$num}_e"); ?></textarea></td>
                             <td><?php echo ratingSelect("s5_rating_{$num}_e", '', $num, 'e'); ?></td>
                         </tr>
                         <?php endif; ?>
@@ -651,17 +663,17 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                 <div class="step5-signatory-grid">
                     <div class="sign-card">
                         <label>Rater:</label>
-                        <input type="text" name="s5_sign_rater_name">
+                        <input type="text" name="s5_sign_rater_name" value="<?php echo fval('s5_sign_rater_name'); ?>">
                         <label>Position:</label>
-                        <input type="text" name="s5_sign_rater_position">
+                        <input type="text" name="s5_sign_rater_position" value="<?php echo fval('s5_sign_rater_position'); ?>">
                     </div>
                     <div class="sign-card">
                         <label>Approving Authority:</label>
-                        <input type="text" name="s5_sign_approver_name">
+                        <input type="text" name="s5_sign_approver_name" value="<?php echo fval('s5_sign_approver_name'); ?>">
                         <label>Position:</label>
-                        <input type="text" name="s5_sign_approver_position">
+                        <input type="text" name="s5_sign_approver_position" value="<?php echo fval('s5_sign_approver_position'); ?>">
                         <label>Email:</label>
-                        <input type="email" name="s5_sign_approver_email">
+                        <input type="email" name="s5_sign_approver_email" value="<?php echo fval('s5_sign_approver_email'); ?>">
                     </div>
                 </div>
 
@@ -688,7 +700,7 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                         </div>
                         <?php foreach ($c['items'] as $i => $item): ?>
                             <label class="comp-item">
-                                <input type="checkbox" class="comp-checkbox" data-comp="<?php echo $key; ?>" name="comp_<?php echo $key; ?>[]" value="<?php echo $i + 1; ?>">
+                                <input type="checkbox" class="comp-checkbox" data-comp="<?php echo $key; ?>" name="comp_<?php echo $key; ?>[]" value="<?php echo $i + 1; ?>" <?php echo fchecked("comp_{$key}", $i + 1); ?>>
                                 <?php echo ($i + 1) . '. ' . htmlspecialchars($item); ?>
                             </label>
                         <?php endforeach; ?>
@@ -751,11 +763,11 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                     </div>
                     <div class="sign-card">
                         <label>Rater:</label>
-                        <input type="text" name="s7_sign_rater_name">
+                        <input type="text" name="s7_sign_rater_name" value="<?php echo fval('s7_sign_rater_name'); ?>">
                     </div>
                     <div class="sign-card">
                         <label>Approving Authority:</label>
-                        <input type="text" name="s7_sign_approver_name">
+                        <input type="text" name="s7_sign_approver_name" value="<?php echo fval('s7_sign_approver_name'); ?>">
                     </div>
                 </div>
 
@@ -782,14 +794,22 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                             <th>Resources Needed</th>
                         </tr>
                         <tbody id="devplan_functional_body">
-                        <?php for ($r = 1; $r <= 6; $r++): ?>
+                        <?php
+                        $funcRowCount = 6;
+                        foreach ($draftValues as $draftKey => $draftVal) {
+                            if (preg_match('/^s8_func_strength_(\d+)$/', $draftKey, $m)) {
+                                $funcRowCount = max($funcRowCount, (int)$m[1]);
+                            }
+                        }
+                        for ($r = 1; $r <= $funcRowCount; $r++):
+                        ?>
                         <tr>
-                            <td><input type="text" name="s8_func_strength_<?php echo $r; ?>"></td>
-                            <td><input type="text" name="s8_func_devneed_<?php echo $r; ?>"></td>
-                            <td><input type="text" name="s8_func_learnobj_<?php echo $r; ?>"></td>
-                            <td><input type="text" name="s8_func_intervention_<?php echo $r; ?>"></td>
-                            <td><input type="text" name="s8_func_timeline_<?php echo $r; ?>" placeholder="Year-round"></td>
-                            <td><input type="text" name="s8_func_resources_<?php echo $r; ?>"></td>
+                            <td><input type="text" name="s8_func_strength_<?php echo $r; ?>" value="<?php echo fval("s8_func_strength_{$r}"); ?>"></td>
+                            <td><input type="text" name="s8_func_devneed_<?php echo $r; ?>" value="<?php echo fval("s8_func_devneed_{$r}"); ?>"></td>
+                            <td><input type="text" name="s8_func_learnobj_<?php echo $r; ?>" value="<?php echo fval("s8_func_learnobj_{$r}"); ?>"></td>
+                            <td><input type="text" name="s8_func_intervention_<?php echo $r; ?>" value="<?php echo fval("s8_func_intervention_{$r}"); ?>"></td>
+                            <td><input type="text" name="s8_func_timeline_<?php echo $r; ?>" placeholder="Year-round" value="<?php echo fval("s8_func_timeline_{$r}"); ?>"></td>
+                            <td><input type="text" name="s8_func_resources_<?php echo $r; ?>" value="<?php echo fval("s8_func_resources_{$r}"); ?>"></td>
                         </tr>
                         <?php endfor; ?>
                         </tbody>
@@ -812,12 +832,12 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                         </tr>
                         <?php $b = 1; foreach ($competencies as $key => $c): ?>
                         <tr>
-                            <td><input type="text" name="s8_core_strength_<?php echo $b; ?>" value="<?php echo htmlspecialchars($c['label']); ?>"></td>
-                            <td><input type="text" name="s8_core_devneed_<?php echo $b; ?>"></td>
-                            <td><input type="text" name="s8_core_learnobj_<?php echo $b; ?>"></td>
-                            <td><input type="text" name="s8_core_intervention_<?php echo $b; ?>"></td>
-                            <td><input type="text" name="s8_core_timeline_<?php echo $b; ?>" placeholder="Year-round"></td>
-                            <td><input type="text" name="s8_core_resources_<?php echo $b; ?>"></td>
+                            <td><input type="text" name="s8_core_strength_<?php echo $b; ?>" value="<?php echo fval("s8_core_strength_{$b}", $c['label']); ?>"></td>
+                            <td><input type="text" name="s8_core_devneed_<?php echo $b; ?>" value="<?php echo fval("s8_core_devneed_{$b}"); ?>"></td>
+                            <td><input type="text" name="s8_core_learnobj_<?php echo $b; ?>" value="<?php echo fval("s8_core_learnobj_{$b}"); ?>"></td>
+                            <td><input type="text" name="s8_core_intervention_<?php echo $b; ?>" value="<?php echo fval("s8_core_intervention_{$b}"); ?>"></td>
+                            <td><input type="text" name="s8_core_timeline_<?php echo $b; ?>" placeholder="Year-round" value="<?php echo fval("s8_core_timeline_{$b}"); ?>"></td>
+                            <td><input type="text" name="s8_core_resources_<?php echo $b; ?>" value="<?php echo fval("s8_core_resources_{$b}"); ?>"></td>
                         </tr>
                         <?php $b++; endforeach; ?>
                     </table>
@@ -830,11 +850,11 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                     </div>
                     <div class="sign-card">
                         <label>Rater:</label>
-                        <input type="text" name="s8_sign_rater_name">
+                        <input type="text" name="s8_sign_rater_name" value="<?php echo fval('s8_sign_rater_name'); ?>">
                     </div>
                     <div class="sign-card">
                         <label>Approving Authority:</label>
-                        <input type="text" name="s8_sign_approver_name">
+                        <input type="text" name="s8_sign_approver_name" value="<?php echo fval('s8_sign_approver_name'); ?>">
                     </div>
                 </div>
 
@@ -917,6 +937,17 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
     const backButtons = document.querySelectorAll('.btn-back');
     const COMPETENCY_KEYS = ['self_management', 'teamwork', 'prof_ethics', 'service_orientation', 'results_focus', 'innovation'];
 
+    // ---- Autosave: silently persist the whole form as a draft whenever the
+    // teacher moves between steps, so an unfinished IPCRF can be resumed
+    // later exactly where they left off. ----
+    function autosaveDraft(targetStep) {
+        const formEl = document.getElementById('ipcrfWizardForm');
+        if (!formEl) return;
+        const fd = new FormData(formEl);
+        fd.set('_step', targetStep);
+        fetch('ipcrf_autosave.php', { method: 'POST', body: fd, credentials: 'same-origin' }).catch(() => {});
+    }
+
     function showStep(stepNumber) {
         tabs.forEach(tab => tab.classList.toggle('active', tab.dataset.step === String(stepNumber)));
         steps.forEach(step => step.classList.toggle('active', step.dataset.step === String(stepNumber)));
@@ -971,24 +1002,23 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
         document.getElementById('review_devplan_count').textContent = filledRows;
     }
 
-    <?php if ($jumpToLastStep): ?>
-    showStep('8');
-    <?php endif; ?>
-
     tabs.forEach(tab => {
         tab.addEventListener('click', function () {
+            autosaveDraft(this.dataset.step);
             showStep(this.dataset.step);
         });
     });
 
     nextButtons.forEach(btn => {
         btn.addEventListener('click', function () {
+            autosaveDraft(this.dataset.next);
             showStep(this.dataset.next);
         });
     });
 
     backButtons.forEach(btn => {
         btn.addEventListener('click', function () {
+            autosaveDraft(this.dataset.back);
             showStep(this.dataset.back);
         });
     });
@@ -1146,11 +1176,50 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
     const wizardForm = document.getElementById('ipcrfWizardForm');
     const submitBtn = wizardForm ? wizardForm.querySelector('button[name="submit_ipcrf"]') : null;
     if (wizardForm && submitBtn) {
-        wizardForm.addEventListener('submit', function () {
+        // CSS only hides inactive steps with display:none — that does NOT
+        // exempt their required fields from HTML5 constraint validation.
+        // Without this, clicking Submit while a required field on an
+        // earlier, now-hidden step is still empty makes the browser block
+        // the submission silently: no page change, no visible error, the
+        // button just appears to do nothing. Jump to that step and let the
+        // browser show its native validation message there instead.
+        submitBtn.addEventListener('click', function (e) {
+            if (!wizardForm.checkValidity()) {
+                e.preventDefault();
+                const firstInvalid = wizardForm.querySelector('input:invalid, select:invalid, textarea:invalid');
+                if (firstInvalid) {
+                    const stepEl = firstInvalid.closest('.wizard-step');
+                    if (stepEl) {
+                        showStep(stepEl.dataset.step);
+                    }
+                    firstInvalid.reportValidity();
+                    firstInvalid.focus();
+                }
+                return;
+            }
             submitBtn.disabled = true;
             submitBtn.textContent = 'Submitting…';
         });
     }
+
+    // ---- Restore computed values (Ave/Score/Final Rating, competency
+    // totals, Part III summary) from a resumed draft's saved ratings, then
+    // land on whichever step the teacher hadn't finished yet. ----
+    for (let i = 1; i <= OBJECTIVE_COUNT; i++) {
+        recalcObjective(i);
+    }
+    COMPETENCY_KEYS.forEach(key => {
+        const total = document.querySelectorAll(`.comp-checkbox[data-comp="${key}"]:checked`).length;
+        const totalField = document.getElementById(`comp_total_${key}`);
+        if (totalField) totalField.value = total;
+    });
+    updateStep7Summary();
+
+    <?php if ($jumpToLastStep): ?>
+    showStep('8');
+    <?php elseif ($resumeStep > 1): ?>
+    showStep('<?php echo (int)$resumeStep; ?>');
+    <?php endif; ?>
 })();
 </script>
 </body>

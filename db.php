@@ -107,4 +107,39 @@ if (!empty($existingEntriesColumns) && !in_array('edited_by', $existingEntriesCo
 if (!empty($existingEntriesColumns) && !in_array('edited_at', $existingEntriesColumns, true)) {
     $conn->query("ALTER TABLE ipcrf_entries ADD COLUMN edited_at DATETIME NULL");
 }
+
+/**
+ * Support in-progress IPCRF drafts: a teacher can leave the wizard partway
+ * through and resume later without losing what they already filled in.
+ * status distinguishes an autosaved draft from a finalized submission, and
+ * last_step remembers which wizard step to resume on.
+ */
+if (!empty($existingEntriesColumns) && !in_array('status', $existingEntriesColumns, true)) {
+    $conn->query("ALTER TABLE ipcrf_entries ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'submitted'");
+}
+
+if (!empty($existingEntriesColumns) && !in_array('last_step', $existingEntriesColumns, true)) {
+    $conn->query("ALTER TABLE ipcrf_entries ADD COLUMN last_step INT NULL");
+}
+
+if (!empty($existingEntriesColumns) && !in_array('updated_at', $existingEntriesColumns, true)) {
+    $conn->query("ALTER TABLE ipcrf_entries ADD COLUMN updated_at DATETIME NULL");
+}
+
+/**
+ * Ensure a fixed admin account always exists, since public registration no
+ * longer allows self-signing up as admin/super_admin.
+ */
+$fixedAdminEmail = 'admin@gmail.com';
+$adminCheckStmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
+$adminCheckStmt->bind_param("s", $fixedAdminEmail);
+$adminCheckStmt->execute();
+if ($adminCheckStmt->get_result()->num_rows === 0) {
+    $fixedAdminPasswordHash = password_hash('admin1234', PASSWORD_DEFAULT);
+    $fixedAdminName = 'Admin';
+    $fixedAdminRole = 'admin';
+    $adminInsertStmt = $conn->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)");
+    $adminInsertStmt->bind_param("ssss", $fixedAdminName, $fixedAdminEmail, $fixedAdminPasswordHash, $fixedAdminRole);
+    $adminInsertStmt->execute();
+}
 ?>

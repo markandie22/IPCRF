@@ -28,7 +28,7 @@ $stmt = $conn->prepare(
     "SELECT u.id, u.name, e.id AS entry_id, e.rating, e.objective, e.performance_indicator, e.edited_at
      FROM users u
      LEFT JOIN ipcrf_entries e ON e.id = (
-         SELECT e2.id FROM ipcrf_entries e2 WHERE e2.user_id = u.id ORDER BY e2.id DESC LIMIT 1
+         SELECT e2.id FROM ipcrf_entries e2 WHERE e2.user_id = u.id AND e2.status = 'submitted' ORDER BY e2.id DESC LIMIT 1
      )
      WHERE u.role = 'teacher' AND u.school_name = ?
      ORDER BY u.name"

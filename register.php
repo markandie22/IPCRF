@@ -10,7 +10,11 @@ if (isset($_POST['register'])) {
     $email = trim($_POST['reg_email'] ?? '');
     $password = $_POST['reg_password'] ?? '';
     $confirmPassword = $_POST['confirm_password'] ?? '';
-    $role = $_POST['role'] ?? 'teacher';
+    // Public registration only ever creates teacher accounts. Admin, super
+    // admin, and principal accounts are provisioned separately by an admin
+    // (see admin_create_principal.php and the fixed admin seed in db.php)
+    // so this form can't be used to self-escalate privileges.
+    $role = 'teacher';
     $schoolName = trim($_POST['school_name'] ?? '');
     $schoolId = null;
 
@@ -20,11 +24,9 @@ if (isset($_POST['register'])) {
         $registerMessage = '<div class="message">Please provide a valid email address.</div>';
     } elseif ($password !== $confirmPassword) {
         $registerMessage = '<div class="message">Passwords do not match.</div>';
-    } elseif (!in_array($role, ['teacher', 'admin', 'super_admin'], true)) {
-        $registerMessage = '<div class="message">Invalid role selection.</div>';
-    } elseif ($role === 'teacher' && $schoolName === '') {
+    } elseif ($schoolName === '') {
         $registerMessage = '<div class="message">Please select your school.</div>';
-    } elseif ($role === 'teacher' && !is_valid_school_name($schoolName)) {
+    } elseif (!is_valid_school_name($schoolName)) {
         $registerMessage = '<div class="message">Invalid school selection.</div>';
     } else {
         try {
@@ -37,9 +39,6 @@ if (isset($_POST['register'])) {
                 $registerMessage = '<div class="message">Email is already registered.</div>';
             } else {
                 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-                if ($role !== 'teacher') {
-                    $schoolName = null;
-                }
 
                 $insertStmt = $conn->prepare("INSERT INTO users (name, email, password, role, school_id, school_name) VALUES (?, ?, ?, ?, ?, ?)");
                 $insertStmt->bind_param("ssssis", $name, $email, $hashedPassword, $role, $schoolId, $schoolName);
@@ -84,14 +83,7 @@ if (isset($_POST['register'])) {
         <label for="confirm_password">Confirm Password</label>
         <input type="password" id="confirm_password" name="confirm_password" required>
 
-        <label for="role">Role</label>
-        <select id="role" name="role">
-            <option value="teacher" selected>Teacher</option>
-            <option value="admin">Admin</option>
-            <option value="super_admin">Super Admin</option>
-        </select>
-
-        <label for="school_name">School (for Teacher)</label>
+        <label for="school_name">School</label>
         <select id="school_name" name="school_name">
             <option value="">Select school</option>
             <?php foreach ($schoolChoices as $schoolNameOption): ?>

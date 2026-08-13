@@ -12,8 +12,9 @@ if ($_SESSION['role'] != 'supervisor') {
 }
 
 // Fetch all IPCRF entries
-$sql = "SELECT u.name, e.* FROM ipcrf_entries e 
-        JOIN users u ON e.user_id = u.id";
+$sql = "SELECT u.name, e.* FROM ipcrf_entries e
+        JOIN users u ON e.user_id = u.id
+        WHERE e.status = 'submitted'";
 $result = $conn->query($sql);
 
 // Create spreadsheet

@@ -96,6 +96,26 @@ body {
     color: rgba(255, 255, 255, 0.92);
 }
 
+.draft-banner {
+    background: #fffbeb;
+    border: 1px solid #f2d38a;
+    border-left: 4px solid #d97706;
+    border-radius: var(--gc-radius);
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    color: #7c4a03;
+}
+
+.draft-banner h3 {
+    margin: 0 0 8px;
+    color: #92400e;
+}
+
+.draft-banner p {
+    margin: 0 0 14px;
+    line-height: 1.5;
+}
+
 .card-grid {
     display: grid;
     grid-template-columns: repeat(12, 1fr);
