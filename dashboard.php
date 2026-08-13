@@ -192,7 +192,10 @@ while ($row = $result->fetch_assoc()) {
                                             <span class="submission-badge submission-badge--muted">Not edited</span>
                                         <?php endif; ?>
                                     </td>
-                                    <td><a class="link-btn" href="ipcrf_form.php?entry_id=<?php echo (int)$s['id']; ?>">View Full IPCRF</a></td>
+                                    <td class="actions-cell">
+                                        <a class="link-btn" href="ipcrf_form.php?entry_id=<?php echo (int)$s['id']; ?>">View Full IPCRF</a>
+                                        <a class="link-btn link-btn--muted" href="export_entry_csv.php?id=<?php echo (int)$s['id']; ?>">Download Steps 1&ndash;4 (CSV)</a>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

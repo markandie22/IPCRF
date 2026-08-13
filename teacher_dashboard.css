@@ -547,6 +547,13 @@ body {
     color: var(--gc-muted);
 }
 
+.actions-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
 .submissions-table .link-btn {
     display: inline-block;
     padding: 6px 12px;
@@ -562,6 +569,16 @@ body {
 
 .submissions-table .link-btn:hover {
     background: #e4eefc;
+}
+
+.submissions-table .link-btn--muted {
+    background: #f4f6fa;
+    color: var(--gc-muted);
+    border-color: var(--gc-border);
+}
+
+.submissions-table .link-btn--muted:hover {
+    background: #eaedf3;
 }
 
 @media (max-width: 900px) {
