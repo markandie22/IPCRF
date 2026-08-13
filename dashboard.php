@@ -6,6 +6,22 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'teacher') {
     exit;
 }
 
+$justSubmitted = ($_GET['submitted'] ?? '') === '1';
+
+$currentUser = null;
+$userStmt = $conn->prepare("SELECT name, school_name, profile_picture FROM users WHERE id = ?");
+$userStmt->bind_param("i", $_SESSION['user_id']);
+$userStmt->execute();
+$currentUser = $userStmt->get_result()->fetch_assoc();
+$currentUserName = $currentUser['name'] ?? '';
+$currentUserSchool = $currentUser['school_name'] ?? '';
+$currentUserAvatar = $currentUser['profile_picture'] ?? '';
+$currentUserInitials = '';
+foreach (array_slice(preg_split('/\s+/', trim($currentUserName)), 0, 2) as $part) {
+    if ($part !== '') $currentUserInitials .= mb_strtoupper(mb_substr($part, 0, 1));
+}
+if ($currentUserInitials === '') $currentUserInitials = 'T';
+
 $ratingLabels = [
     1 => 'Needs Improvement',
     2 => 'Fair',
@@ -35,7 +51,7 @@ $draft = $draftStmt->get_result()->fetch_assoc();
 
 $submissions = [];
 $stmt = $conn->prepare(
-    "SELECT e.objective, e.performance_indicator, e.rating, e.remarks, e.edited_at,
+    "SELECT e.id, e.objective, e.performance_indicator, e.rating, e.remarks, e.edited_at,
             editor.name AS editor_name
      FROM ipcrf_entries e
      LEFT JOIN users editor ON editor.id = e.edited_by
@@ -55,25 +71,61 @@ while ($row = $result->fetch_assoc()) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Teacher Dashboard - IPCRF</title>
-    <link rel="stylesheet" href="teacher_dashboard.css">
+    <link rel="stylesheet" href="teacher_dashboard.css?v=<?php echo @filemtime(__DIR__ . '/teacher_dashboard.css'); ?>">
 </head>
 <body>
 <div class="dashboard-shell">
-    <header class="topbar">
-        <div class="brand">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
             <span class="brand-badge">IP</span>
             <span>IPCRF Classroom</span>
         </div>
-        <div class="topbar-actions">
+
+        <div class="sidebar-profile">
+            <span class="sidebar-profile__avatar">
+                <?php if ($currentUserAvatar): ?>
+                    <img src="<?php echo htmlspecialchars($currentUserAvatar); ?>" alt="">
+                <?php else: ?>
+                    <?php echo htmlspecialchars($currentUserInitials); ?>
+                <?php endif; ?>
+            </span>
+            <div class="sidebar-profile__info">
+                <strong><?php echo htmlspecialchars($currentUserName !== '' ? $currentUserName : 'Teacher'); ?></strong>
+                <span><?php echo htmlspecialchars($currentUserSchool !== '' ? $currentUserSchool : 'No school set'); ?></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a class="sidebar-nav__link active" href="dashboard.php">
+                <span class="sidebar-nav__icon" aria-hidden="true">&#8962;</span> Dashboard
+            </a>
+            <a class="sidebar-nav__link" href="teacher_settings.php">
+                <span class="sidebar-nav__icon" aria-hidden="true">&#9881;</span> Settings
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
             <a class="btn btn-secondary" href="logout.php">Logout</a>
         </div>
-    </header>
+    </aside>
 
+    <div class="dashboard-main">
     <main class="page-wrap">
         <section class="hero-card">
             <h1 class="hero-title">Teacher Dashboard</h1>
             <p class="hero-subtitle">Welcome back! Manage your performance records and submit your IPCRF tasks quickly.</p>
         </section>
+
+        <?php if ($justSubmitted): ?>
+        <section class="submit-success-banner" id="submitSuccessBanner">
+            <span class="submit-success-banner__icon" aria-hidden="true">&#10003;</span>
+            <div class="submit-success-banner__text">
+                <strong>IPCRF submitted successfully.</strong>
+                <span>Your entry has been recorded and is ready for review — see it highlighted below.</span>
+            </div>
+            <button type="button" class="submit-success-banner__close" onclick="document.getElementById('submitSuccessBanner').remove()" aria-label="Dismiss">&times;</button>
+        </section>
+        <?php endif; ?>
 
         <?php if ($draft): ?>
         <section class="draft-banner">
@@ -120,11 +172,12 @@ while ($row = $result->fetch_assoc()) {
                                 <th>Rating</th>
                                 <th>Remarks</th>
                                 <th>Status</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($submissions as $s): ?>
-                                <tr>
+                            <?php foreach ($submissions as $index => $s): ?>
+                                <tr<?php echo ($justSubmitted && $index === 0) ? ' class="submission-row--new"' : ''; ?>>
                                     <td><?php echo htmlspecialchars($s['objective']); ?></td>
                                     <td><?php echo htmlspecialchars($s['performance_indicator']); ?></td>
                                     <td><?php echo (int)$s['rating']; ?> - <?php echo htmlspecialchars($ratingLabels[(int)$s['rating']] ?? ''); ?></td>
@@ -139,6 +192,7 @@ while ($row = $result->fetch_assoc()) {
                                             <span class="submission-badge submission-badge--muted">Not edited</span>
                                         <?php endif; ?>
                                     </td>
+                                    <td><a class="link-btn" href="ipcrf_form.php?entry_id=<?php echo (int)$s['id']; ?>">View Full IPCRF</a></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -147,6 +201,7 @@ while ($row = $result->fetch_assoc()) {
             <?php endif; ?>
         </section>
     </main>
+    </div>
 </div>
 </body>
 </html>

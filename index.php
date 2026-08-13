@@ -59,7 +59,7 @@ if (isset($_POST['login'])) {
 <html>
 <head>
     <title>Login - IPCRF</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=<?php echo @filemtime(__DIR__ . '/style.css'); ?>">
 </head>
 <body>
 <div class="login-card">

@@ -1,0 +1,6 @@
+# Uploaded images only — never let anything in here execute as a script,
+# even if a bad file somehow slipped past the upload validation.
+<FilesMatch "\.(php|php\d|phtml|pl|py|cgi|asp|aspx|sh|exe)$">
+    Require all denied
+</FilesMatch>
+Options -Indexes

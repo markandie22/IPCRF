@@ -60,7 +60,7 @@ if (isset($_POST['register'])) {
 <head>
     <meta charset="UTF-8">
     <title>Create Account - IPCRF</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=<?php echo @filemtime(__DIR__ . '/style.css'); ?>">
 </head>
 <body>
 <div class="login-card">

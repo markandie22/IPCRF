@@ -44,7 +44,7 @@ if (isset($_POST['forgot_password'])) {
 <head>
     <meta charset="UTF-8">
     <title>Forgot Password - IPCRF</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=<?php echo @filemtime(__DIR__ . '/style.css'); ?>">
 </head>
 <body>
 <div class="login-card">

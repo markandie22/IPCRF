@@ -7,6 +7,24 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'principal') {
 
 $schoolName = trim($_SESSION['school_name'] ?? '');
 
+$currentUserAvatar = '';
+if (isset($_SESSION['user_id'])) {
+    $avatarStmt = $conn->prepare("SELECT profile_picture FROM users WHERE id = ?");
+    $avatarStmt->bind_param("i", $_SESSION['user_id']);
+    $avatarStmt->execute();
+    $avatarRow = $avatarStmt->get_result()->fetch_assoc();
+    $currentUserAvatar = $avatarRow['profile_picture'] ?? '';
+}
+
+$schoolLogoPath = '';
+if ($schoolName !== '') {
+    $logoStmt = $conn->prepare("SELECT logo_path FROM school_logos WHERE school_name = ?");
+    $logoStmt->bind_param("s", $schoolName);
+    $logoStmt->execute();
+    $logoRow = $logoStmt->get_result()->fetch_assoc();
+    $schoolLogoPath = $logoRow['logo_path'] ?? '';
+}
+
 $ratingLabels = [
     1 => 'Needs Improvement',
     2 => 'Fair',
@@ -93,18 +111,27 @@ $pieGradient = !empty($gradientParts) ? implode(', ', $gradientParts) : '#e5eaf6
 <head>
     <meta charset="UTF-8">
     <title>Principal Dashboard - IPCRF</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=<?php echo @filemtime(__DIR__ . '/style.css'); ?>">
 </head>
 <body>
 <div class="admin-wrapper">
     <div class="admin-card">
         <div class="admin-header">
-            <div>
-                <h2>Principal Dashboard</h2>
-                <p>Teacher evaluation overview for <?php echo htmlspecialchars($schoolName !== '' ? $schoolName : 'your school'); ?>.</p>
+            <div class="admin-header__identity">
+                <?php if ($schoolLogoPath): ?>
+                    <img class="admin-header__logo" src="<?php echo htmlspecialchars($schoolLogoPath); ?>" alt="">
+                <?php endif; ?>
+                <?php if ($currentUserAvatar): ?>
+                    <img class="admin-header__avatar" src="<?php echo htmlspecialchars($currentUserAvatar); ?>" alt="">
+                <?php endif; ?>
+                <div>
+                    <h2>Principal Dashboard</h2>
+                    <p>Teacher evaluation overview for <?php echo htmlspecialchars($schoolName !== '' ? $schoolName : 'your school'); ?>.</p>
+                </div>
             </div>
             <div class="admin-actions">
                 <a class="btn btn-inline" href="view_ipcrf.php">View Records</a>
+                <a class="btn btn-inline" href="principal_settings.php">Settings</a>
                 <a class="btn btn-inline btn-muted" href="logout.php">Logout</a>
             </div>
         </div>
@@ -209,7 +236,7 @@ $pieGradient = !empty($gradientParts) ? implode(', ', $gradientParts) : '#e5eaf6
                             </td>
                             <td>
                                 <?php if ($t['entry_id'] !== null): ?>
-                                    <a class="link-btn" href="principal_edit_entry.php?id=<?php echo (int)$t['entry_id']; ?>">View / Edit</a>
+                                    <a class="link-btn" href="ipcrf_form.php?entry_id=<?php echo (int)$t['entry_id']; ?>">View / Edit</a>
                                 <?php else: ?>
                                     &mdash;
                                 <?php endif; ?>

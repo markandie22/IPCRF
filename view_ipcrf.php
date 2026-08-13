@@ -54,7 +54,7 @@ $result = $stmt->get_result();
 <head>
     <meta charset="UTF-8">
     <title>Admin View - IPCRF Records</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=<?php echo @filemtime(__DIR__ . '/style.css'); ?>">
 </head>
 <body>
 <div class="admin-wrapper">
@@ -73,6 +73,7 @@ $result = $stmt->get_result();
             <div class="admin-actions">
                 <?php if ($isPrincipal): ?>
                 <a class="btn btn-inline" href="principal_dashboard.php">Dashboard</a>
+                <a class="btn btn-inline" href="principal_settings.php">Settings</a>
                 <?php else: ?>
                 <a class="btn btn-inline" href="admin_create_principal.php">Create Principal Account</a>
                 <a class="btn btn-inline" href="export_ipcrf.php">Download Excel Report</a>
@@ -142,7 +143,7 @@ $result = $stmt->get_result();
                                     <span class="badge badge--muted">Edited</span>
                                 <?php endif; ?>
                             </td>
-                            <td><a class="link-btn" href="principal_edit_entry.php?id=<?php echo (int)$row['id']; ?>">View / Edit</a></td>
+                            <td><a class="link-btn" href="ipcrf_form.php?entry_id=<?php echo (int)$row['id']; ?>">View / Edit</a></td>
                             <?php endif; ?>
                         </tr>
                     <?php endwhile; ?>

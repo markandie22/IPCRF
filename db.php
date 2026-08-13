@@ -36,6 +36,22 @@ $createEntriesTable = "CREATE TABLE IF NOT EXISTS ipcrf_entries (
 $conn->query($createEntriesTable);
 
 /**
+ * Schools aren't a real table in this app (get_bataan_public_schools() is a
+ * fixed static list), so a school's logo — uploaded by its principal — is
+ * keyed on the school's name here instead of a school_id.
+ */
+$createSchoolLogosTable = "CREATE TABLE IF NOT EXISTS school_logos (
+    school_name VARCHAR(150) NOT NULL PRIMARY KEY,
+    logo_path VARCHAR(255) NOT NULL,
+    updated_by INT NULL,
+    updated_at DATETIME NULL,
+    CONSTRAINT fk_school_logo_editor FOREIGN KEY (updated_by) REFERENCES users(id)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+$conn->query($createSchoolLogosTable);
+
+/**
  * Lightweight schema migration for existing databases.
  * Ensures required columns exist for current app features.
  */
@@ -54,6 +70,14 @@ if (!in_array('school_id', $existingUserColumns, true)) {
 
 if (!in_array('school_name', $existingUserColumns, true)) {
     $conn->query("ALTER TABLE users ADD COLUMN school_name VARCHAR(150) NULL");
+}
+
+/**
+ * Lets a teacher or principal upload their own profile picture, and a
+ * principal upload a logo for their school (see school_logos below).
+ */
+if (!in_array('profile_picture', $existingUserColumns, true)) {
+    $conn->query("ALTER TABLE users ADD COLUMN profile_picture VARCHAR(255) NULL");
 }
 
 /**

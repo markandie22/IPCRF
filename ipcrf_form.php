@@ -2,34 +2,114 @@
 include("db.php");
 include("school_helper.php");
 
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'teacher') {
+// A principal can open this same wizard against one specific teacher's
+// already-submitted entry (?entry_id=…) to view and edit it in full, rather
+// than the 4-field summary form principal_edit_entry.php used to offer. A
+// teacher can likewise open their own already-submitted entry this way to
+// see the whole thing back (and any edit their principal made to it) — but
+// only to look, not to change it, since editing after submission is the
+// principal's job in this workflow. entry_id must travel on both GET
+// (opening the page) and POST (saving), so accept it from either.
+$viewerRole = $_SESSION['role'] ?? '';
+$requestedEntryId = (int)($_POST['entry_id'] ?? $_GET['entry_id'] ?? 0);
+$isPrincipalEditor = $viewerRole === 'principal';
+$isTeacherViewer = $viewerRole === 'teacher' && $requestedEntryId > 0;
+$isReadOnly = $isTeacherViewer;
+
+if (
+    !isset($_SESSION['user_id']) ||
+    !in_array($viewerRole, ['teacher', 'principal'], true) ||
+    ($isPrincipalEditor && $requestedEntryId <= 0)
+) {
     die("Access denied.");
 }
 
+$editEntryId = ($isPrincipalEditor || $isTeacherViewer) ? $requestedEntryId : 0;
+
+// Release the session file lock now that we're done reading $_SESSION.
+// db.php's session_start() otherwise holds an exclusive lock for the whole
+// request, so a Submit POST here would queue up behind any still-in-flight
+// autosave request (ipcrf_autosave.php) for the same session, leaving the
+// Submit button stuck on "Submitting…" until the autosave request finishes.
+session_write_close();
+
 $bataanSchools = get_bataan_public_schools();
+
+// Which teacher's data this page renders: the logged-in teacher themself,
+// or (for a principal) the owner of the entry they're editing.
+$targetUserId = $_SESSION['user_id'];
+$editEntry = null;
+
+if ($isPrincipalEditor) {
+    $principalSchool = trim($_SESSION['school_name'] ?? '');
+    $entryStmt = $conn->prepare(
+        "SELECT e.id, e.user_id, e.full_data, u.school_name
+         FROM ipcrf_entries e
+         JOIN users u ON e.user_id = u.id
+         WHERE e.id = ? AND u.role = 'teacher' AND e.status = 'submitted'"
+    );
+    $entryStmt->bind_param("i", $editEntryId);
+    $entryStmt->execute();
+    $editEntry = $entryStmt->get_result()->fetch_assoc();
+
+    // Only the entry's own school's principal may view/edit it, and only
+    // once it's actually a finished submission (not another teacher's
+    // in-progress draft).
+    if (!$editEntry || trim($editEntry['school_name']) !== $principalSchool) {
+        die("Access denied.");
+    }
+    $targetUserId = (int)$editEntry['user_id'];
+} elseif ($isTeacherViewer) {
+    // A teacher may only look back at their own submitted entries, never
+    // someone else's — ownership is enforced in the WHERE clause itself.
+    $entryStmt = $conn->prepare(
+        "SELECT e.id, e.user_id, e.full_data, e.edited_at, editor.name AS editor_name
+         FROM ipcrf_entries e
+         LEFT JOIN users editor ON editor.id = e.edited_by
+         WHERE e.id = ? AND e.user_id = ? AND e.status = 'submitted'"
+    );
+    $entryStmt->bind_param("ii", $editEntryId, $_SESSION['user_id']);
+    $entryStmt->execute();
+    $editEntry = $entryStmt->get_result()->fetch_assoc();
+
+    if (!$editEntry) {
+        die("Access denied.");
+    }
+}
+
 $currentUser = null;
 $userStmt = $conn->prepare("SELECT name, school_name FROM users WHERE id = ?");
-$userStmt->bind_param("i", $_SESSION['user_id']);
+$userStmt->bind_param("i", $targetUserId);
 $userStmt->execute();
 $currentUser = $userStmt->get_result()->fetch_assoc();
 
-// Load the teacher's single in-progress draft (if any) so the wizard can be
-// repopulated and resumed on the step they last left off on. Completed
-// parts stay filled in; only the unfinished steps are still blank.
+// Load the values to repopulate the wizard with: the teacher's single
+// in-progress draft (if any) so they can resume on the step they last left
+// off on, or — when viewing/editing a specific already-submitted entry —
+// that entry's saved data.
 $draftValues = [];
 $resumeStep = 1;
-$draftStmt = $conn->prepare("SELECT full_data, last_step FROM ipcrf_entries WHERE user_id = ? AND status = 'draft' LIMIT 1");
-$draftStmt->bind_param("i", $_SESSION['user_id']);
-$draftStmt->execute();
-$draftRow = $draftStmt->get_result()->fetch_assoc();
-if ($draftRow) {
-    $decoded = json_decode($draftRow['full_data'] ?? '', true);
+$draftRow = null;
+
+if ($isPrincipalEditor || $isTeacherViewer) {
+    $decoded = json_decode($editEntry['full_data'] ?? '', true);
     if (is_array($decoded)) {
         $draftValues = $decoded;
     }
-    $resumeStep = (int)($draftRow['last_step'] ?: 1);
-    if ($resumeStep < 1) $resumeStep = 1;
-    if ($resumeStep > 8) $resumeStep = 8;
+} else {
+    $draftStmt = $conn->prepare("SELECT full_data, last_step FROM ipcrf_entries WHERE user_id = ? AND status = 'draft' LIMIT 1");
+    $draftStmt->bind_param("i", $_SESSION['user_id']);
+    $draftStmt->execute();
+    $draftRow = $draftStmt->get_result()->fetch_assoc();
+    if ($draftRow) {
+        $decoded = json_decode($draftRow['full_data'] ?? '', true);
+        if (is_array($decoded)) {
+            $draftValues = $decoded;
+        }
+        $resumeStep = (int)($draftRow['last_step'] ?: 1);
+        if ($resumeStep < 1) $resumeStep = 1;
+        if ($resumeStep > 8) $resumeStep = 8;
+    }
 }
 
 function fval($name, $default = '') {
@@ -52,7 +132,17 @@ function fselected($name, $value) {
 $message = "";
 $jumpToLastStep = false;
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_ipcrf'])) {
+// Gate on the request method alone, not on isset($_POST['submit_ipcrf']):
+// if the Submit button gets disabled (e.g. by the double-submit guard below)
+// before the browser finishes constructing the submitted form data, some
+// browsers drop a disabled button's own name=value pair from the POST body
+// entirely. Relying on that field being present silently ate submissions —
+// they'd hit this file, fail isset(), and fall through to re-rendering the
+// draft with no error. This form has no other POST target, so REQUEST_METHOD
+// alone is enough to know this is a submission attempt. $isReadOnly is
+// checked too: a teacher viewing their own past submission has no save
+// button in the UI, but a forged POST must still be refused server-side.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isReadOnly) {
     $objective = trim($_POST['objective'] ?? '');
     $performanceIndicator = trim($_POST['performance_indicator'] ?? '');
     $rating = (int)($_POST['rating'] ?? 0);
@@ -62,6 +152,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_ipcrf'])) {
     if ($objective === '' || $performanceIndicator === '' || $rating < 1 || $rating > 5) {
         $message = '<div class="message">Please complete all required fields with a valid rating (1-5).</div>';
         $jumpToLastStep = true;
+    } elseif ($isPrincipalEditor) {
+        // entry_id was already validated as belonging to this principal's
+        // school and being a submitted entry, above — re-check status in the
+        // WHERE clause anyway so a stale page can't resurrect/overwrite a
+        // draft that changed status in the meantime.
+        $stmt = $conn->prepare(
+            "UPDATE ipcrf_entries
+             SET objective = ?, performance_indicator = ?, rating = ?, remarks = ?, full_data = ?, edited_by = ?, edited_at = NOW()
+             WHERE id = ? AND status = 'submitted'"
+        );
+        $stmt->bind_param("ssissii", $objective, $performanceIndicator, $rating, $remarks, $fullData, $_SESSION['user_id'], $editEntryId);
+
+        if ($stmt->execute()) {
+            header("Location: ipcrf_form.php?entry_id=" . $editEntryId . "&updated=1");
+            exit;
+        } else {
+            $message = '<div class="message">Failed to update this IPCRF entry.</div>';
+            $jumpToLastStep = true;
+        }
     } else {
         // If an autosaved draft exists, finalize it in place instead of
         // creating a second row, so this submission carries the full
@@ -91,7 +200,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_ipcrf'])) {
             $jumpToLastStep = true;
         }
     }
-} elseif (($_GET['submitted'] ?? '') === '1') {
+} elseif ($isPrincipalEditor && ($_GET['updated'] ?? '') === '1') {
+    $message = '<div class="message message--success">IPCRF entry updated successfully.</div>';
+    $jumpToLastStep = true;
+} elseif (!$isPrincipalEditor && ($_GET['submitted'] ?? '') === '1') {
     $message = '<div class="message message--success">IPCRF entry submitted successfully.</div>';
     $jumpToLastStep = true;
 }
@@ -307,11 +419,36 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>IPCRF Form Wizard</title>
-    <link rel="stylesheet" href="style.css">
+    <title><?php
+        if ($isPrincipalEditor) {
+            echo 'Editing ' . htmlspecialchars($currentUser['name'] ?? 'Teacher') . "'s IPCRF";
+        } elseif ($isTeacherViewer) {
+            echo 'My Submitted IPCRF';
+        } else {
+            echo 'IPCRF Form Wizard';
+        }
+    ?></title>
+    <link rel="stylesheet" href="style.css?v=<?php echo @filemtime(__DIR__ . '/style.css'); ?>">
 </head>
 <body>
 <div class="wizard-wrapper">
+    <?php if ($isPrincipalEditor): ?>
+    <div class="entry-context-banner">
+        <span>Viewing/editing <strong><?php echo htmlspecialchars($currentUser['name'] ?? 'this teacher'); ?></strong>'s submitted IPCRF (<?php echo htmlspecialchars($currentUser['school_name'] ?? ''); ?>).</span>
+        <a class="btn link-btn" href="principal_dashboard.php">Back to Principal Dashboard</a>
+    </div>
+    <?php elseif ($isTeacherViewer): ?>
+    <div class="entry-context-banner entry-context-banner--readonly">
+        <span>
+            Viewing your submitted IPCRF (read-only).
+            <?php if (!empty($editEntry['edited_at'])): ?>
+                Last edited by <strong><?php echo htmlspecialchars($editEntry['editor_name'] ?? 'your principal'); ?></strong>
+                on <?php echo htmlspecialchars(date('M j, Y g:i A', strtotime($editEntry['edited_at']))); ?>.
+            <?php endif; ?>
+        </span>
+        <a class="btn link-btn" href="dashboard.php">Back to Dashboard</a>
+    </div>
+    <?php endif; ?>
     <div class="wizard-tabs">
         <button type="button" class="wizard-tab active" data-step="1">Step 1</button>
         <button type="button" class="wizard-tab" data-step="2">Step 2</button>
@@ -320,10 +457,13 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
         <button type="button" class="wizard-tab" data-step="5">Part II</button>
         <button type="button" class="wizard-tab" data-step="6">Part III</button>
         <button type="button" class="wizard-tab" data-step="7">Part IV</button>
-        <button type="button" class="wizard-tab wizard-tab--final" data-step="8">Review &amp; Submit</button>
+        <button type="button" class="wizard-tab wizard-tab--final" data-step="8">Review<?php echo $isReadOnly ? '' : ' &amp; ' . ($isPrincipalEditor ? 'Save' : 'Submit'); ?></button>
     </div>
 
-    <form method="POST" id="ipcrfWizardForm">
+    <form method="POST" id="ipcrfWizardForm" data-entry-mode="<?php echo ($isPrincipalEditor || $isTeacherViewer) ? '1' : '0'; ?>" data-readonly="<?php echo $isReadOnly ? '1' : '0'; ?>">
+        <?php if ($isPrincipalEditor): ?>
+        <input type="hidden" name="entry_id" value="<?php echo (int)$editEntryId; ?>">
+        <?php endif; ?>
         <section class="wizard-step active" data-step="1">
             <div class="intro-board">
                 <h1>OFFICIAL ELECTRONIC IPCRF TOOL</h1>
@@ -916,11 +1056,19 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
 
                 <div class="wizard-actions split">
                     <button type="button" class="btn-back" data-back="7">Back</button>
-                    <button type="submit" name="submit_ipcrf">Submit IPCRF</button>
+                    <?php if (!$isReadOnly): ?>
+                    <button type="submit" name="submit_ipcrf"><?php echo $isPrincipalEditor ? 'Save Changes' : 'Submit IPCRF'; ?></button>
+                    <?php endif; ?>
                 </div>
 
                 <div class="wizard-actions">
-                    <a class="btn link-btn" href="dashboard.php">Return to Dashboard</a>
+                    <?php if ($isPrincipalEditor): ?>
+                        <a class="btn link-btn" href="principal_dashboard.php">Back to Principal Dashboard</a>
+                    <?php elseif ($isTeacherViewer): ?>
+                        <a class="btn link-btn" href="dashboard.php">Back to Dashboard</a>
+                    <?php else: ?>
+                        <a class="btn link-btn" href="dashboard.php<?php echo (($_GET['submitted'] ?? '') === '1') ? '?submitted=1' : ''; ?>">Return to Dashboard</a>
+                    <?php endif; ?>
                 </div>
 
                 <?php echo $message; ?>
@@ -939,10 +1087,14 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
 
     // ---- Autosave: silently persist the whole form as a draft whenever the
     // teacher moves between steps, so an unfinished IPCRF can be resumed
-    // later exactly where they left off. ----
+    // later exactly where they left off. Skipped entirely when viewing/editing
+    // a specific already-submitted entry (data-entry-mode) — ipcrf_autosave.php
+    // only knows how to save a 'draft' row under the *caller's own* user_id,
+    // which would wrongly create a stray draft instead of touching the
+    // entry actually being looked at. ----
     function autosaveDraft(targetStep) {
         const formEl = document.getElementById('ipcrfWizardForm');
-        if (!formEl) return;
+        if (!formEl || formEl.dataset.entryMode === '1') return;
         const fd = new FormData(formEl);
         fd.set('_step', targetStep);
         fetch('ipcrf_autosave.php', { method: 'POST', body: fd, credentials: 'same-origin' }).catch(() => {});
@@ -1195,10 +1347,38 @@ function ratingSelect($name, $extraClass = '', $dataObj = '', $dataQe = '') {
                     firstInvalid.reportValidity();
                     firstInvalid.focus();
                 }
-                return;
             }
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Submitting…';
+            // Disabling/relabeling here (rather than deferring to the form's
+            // 'submit' event) used to sometimes cancel the submission outright:
+            // disabling the very button that is mid-click can make the browser
+            // abort the pending form submission, leaving it stuck on
+            // "Submitting…" forever with no POST ever sent.
+        });
+
+        // Fires only once the browser has actually committed to submitting
+        // (i.e. after constraint validation passed), so disabling the button
+        // here can never cancel the submission that's already underway.
+        // The disabling itself is deferred a tick: doing it synchronously
+        // inside 'submit' can still race the browser's own construction of
+        // the outgoing form data on some engines, dropping the disabled
+        // button's own name=value pair (submit_ipcrf) from the POST body.
+        wizardForm.addEventListener('submit', function () {
+            setTimeout(function () {
+                submitBtn.disabled = true;
+                submitBtn.textContent = wizardForm.dataset.entryMode === '1' ? 'Saving…' : 'Submitting…';
+            }, 0);
+        });
+    }
+
+    // ---- Read-only mode: a teacher looking back at their own already-
+    // submitted entry can page through every part to see it, but shouldn't
+    // be able to change anything from here (editing a submitted IPCRF is the
+    // principal's job in this workflow). Disabling every named field is
+    // simpler and less error-prone than threading a read-only flag through
+    // every one of the wizard's ~150 individual inputs. ----
+    if (wizardForm && wizardForm.dataset.readonly === '1') {
+        wizardForm.querySelectorAll('input[name], select[name], textarea[name]').forEach(el => {
+            el.disabled = true;
         });
     }
 

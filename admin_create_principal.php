@@ -60,7 +60,7 @@ $principalsResult = $conn->query("SELECT name, email, school_name FROM users WHE
 <head>
     <meta charset="UTF-8">
     <title>Create Principal Account - IPCRF</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=<?php echo @filemtime(__DIR__ . '/style.css'); ?>">
 </head>
 <body>
 <div class="admin-wrapper">

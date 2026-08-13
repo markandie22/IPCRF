@@ -9,6 +9,14 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'teacher') {
     exit;
 }
 
+// Release the session file lock now that we're done reading $_SESSION.
+// Without this, PHP's default session handler holds an exclusive lock for
+// the whole request; autosave fires on every wizard step change, so a
+// teacher moving quickly through steps and then hitting Submit would have
+// the final submit request queue up behind still-in-flight autosave
+// requests on the same session, making the Submit button appear stuck.
+session_write_close();
+
 $step = (int)($_POST['_step'] ?? 1);
 if ($step < 1) $step = 1;
 if ($step > 8) $step = 8;
